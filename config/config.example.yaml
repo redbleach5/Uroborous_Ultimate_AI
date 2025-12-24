@@ -1,0 +1,265 @@
+# AILLM Configuration
+
+# LLM Providers Configuration
+llm:
+  # Default provider: openai, anthropic, ollama
+  default_provider: ollama
+  
+  # Provider settings
+  providers:
+    openai:
+      enabled: true
+      api_key: ""  # Set via OPENAI_API_KEY env var
+      default_model: "gpt-4-turbo-preview"
+      base_url: "https://api.openai.com/v1"
+      timeout: 60
+      max_retries: 3
+      cache_enabled: true
+      
+    anthropic:
+      enabled: true
+      api_key: ""  # Set via ANTHROPIC_API_KEY env var
+      default_model: "claude-3-opus-20240229"
+      timeout: 60
+      max_retries: 3
+      cache_enabled: true
+      
+    ollama:
+      enabled: true
+      base_url: "http://localhost:11434"
+      default_model: "llama2"
+      timeout: 300
+      max_retries: 2
+      cache_enabled: true
+      # Auto-detect available models
+      auto_detect_models: true
+      # Recommended models for different tasks
+      recommended_models:
+        code: ["codellama", "deepseek-coder", "mistral"]
+        chat: ["llama2", "mistral", "neural-chat"]
+        analysis: ["llama2", "mistral"]
+
+# RAG Configuration
+rag:
+  enabled: true
+  vector_store:
+    type: "faiss"  # faiss, chroma
+    dimension: 384  # Dimension for embeddings
+    index_path: "vector_store/index.faiss"
+    metadata_path: "vector_store/metadata.pkl"
+    
+  embeddings:
+    model: "sentence-transformers/all-MiniLM-L6-v2"
+    device: "cpu"  # cpu, cuda
+    batch_size: 32
+    cache_dir: "embeddings_cache"
+    
+  search:
+    top_k: 10
+    use_bm25: true
+    use_reranking: true
+    reranker_model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    query_expansion: true
+    multi_query: true
+
+# Context Manager
+context:
+  max_tokens: 8000
+  hierarchical: true
+  query_expansion: true
+  multi_query: true
+
+# Agents Configuration
+agents:
+  code_writer:
+    enabled: true
+    default_model: null  # null = use default provider model
+    temperature: 0.7
+    max_iterations: 10
+    
+  react:
+    enabled: true
+    default_model: null
+    temperature: 0.5
+    max_iterations: 20
+    max_tool_calls: 10
+    
+  research:
+    enabled: true
+    default_model: null
+    temperature: 0.3
+    max_iterations: 15
+    
+  data_analysis:
+    enabled: true
+    default_model: null
+    temperature: 0.2
+    max_iterations: 25
+    
+  workflow:
+    enabled: true
+    default_model: null
+    temperature: 0.3
+    
+  integration:
+    enabled: true
+    default_model: null
+    temperature: 0.4
+    
+  monitoring:
+    enabled: true
+    default_model: null
+    temperature: 0.2
+
+# Orchestrator Configuration
+orchestrator:
+  enabled: true
+  max_parallel_tasks: 5
+  task_timeout: 3600  # seconds
+  auto_recovery: true
+  planning:
+    strategy: "llm"  # llm, heuristic, hybrid
+    use_memory: true
+    max_depth: 5
+
+# Tools Configuration
+tools:
+  enabled: true
+  categories:
+    file: true
+    shell: true
+    git: true
+    web: true
+    database: true
+    api: true
+    
+  safety:
+    enabled: true
+    sandbox: false  # Enable sandbox for code execution
+    allowed_commands: []  # Empty = all commands allowed (with safety checks)
+    blocked_patterns:
+      - "rm -rf /"
+      - "format c:"
+      - "del /f /s /q"
+
+# Long Term Memory
+memory:
+  enabled: true
+  storage_path: "memory/memories.db"
+  max_memories: 10000
+  similarity_threshold: 0.7
+  auto_cleanup: true
+  cleanup_interval_days: 30
+
+# API Server
+api:
+  host: "0.0.0.0"
+  port: 8000
+  reload: false
+  workers: 1
+  cors:
+    enabled: true
+    origins: ["*"]
+    
+  websocket:
+    enabled: true
+    ping_interval: 20
+    ping_timeout: 10
+
+# Frontend
+frontend:
+  enabled: true
+  tauri:
+    enabled: true
+    window_title: "AILLM"
+    window_size: [1200, 800]
+    min_size: [800, 600]
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "json"  # json, text
+  file: "logs/aillm.log"
+  max_size_mb: 100
+  backup_count: 5
+
+# Performance
+performance:
+  cache:
+    llm_responses: true
+    embeddings: true
+    search_results: true
+    
+  parallel:
+    enabled: true
+    max_workers: 4
+    
+  gpu:
+    enabled: false
+    device: "cuda:0"
+
+# AutoML Configuration
+automl:
+  enabled: true
+  frameworks:
+    - sklearn
+    - xgboost
+    - lightgbm
+    - pytorch
+    
+  optimization:
+    enabled: true
+    framework: "optuna"
+    n_trials: 100
+    timeout: 3600
+    
+  explainability:
+    enabled: true
+    methods:
+      - shap
+      - lime
+
+# Multimodal Processing
+multimodal:
+  enabled: true
+  image:
+    enabled: true
+    ocr: true
+    ocr_engine: "tesseract"
+    max_size_mb: 10
+    
+  audio:
+    enabled: true
+    transcription: true
+    model: "whisper-base"
+    
+  video:
+    enabled: true
+    max_duration_seconds: 300
+    extract_frames: true
+
+# Data Processing
+data:
+  processing:
+    enabled: true
+    frameworks:
+      - pandas
+      - dask
+      - ray
+      
+  etl:
+    enabled: true
+    streaming: true
+    
+  analytics:
+    enabled: true
+    auto_eda: true
+    visualization: true
+
+# Workflow
+workflow:
+  enabled: true
+  visual_editor: true
+  storage_path: "workflows/"
+  templates_path: "workflows/templates/"
+

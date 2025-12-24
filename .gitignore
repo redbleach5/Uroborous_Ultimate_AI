@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+*.egg-info/
+dist/
+build/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+LOGS_DEBUG/*.log
+LOGS_DEBUG/*.json
+!LOGS_DEBUG/README.md
+
+# PID files
+*.pid
+backend.pid
+frontend.pid
+
+# Config
+config/config.yaml
+config/*.local.yaml
+
+# Vector stores
+vector_store/
+embeddings_cache/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/target/
+frontend/.tauri/
+
+# Package lock files (используем только в frontend/)
+package-lock.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Python installation files (no longer needed)
+python312.pkg
+python312_expanded/
+python312_extracted/
+INSTALL_PYTHON312.md
+install_python312*.sh
+setup_python312*.sh
+recreate_venv_312.sh
+
+# Test files
+test_snake_*.py
+

@@ -1,0 +1,66 @@
+# Core dependencies
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+pydantic>=2.9.0
+pydantic-settings>=2.6.0
+python-dotenv>=1.0.1
+pyyaml>=6.0.2
+
+# LLM Providers
+openai>=1.54.0
+anthropic>=0.34.0
+httpx[http2]>=0.27.0  # HTTP/2 support for Ollama provider (optional but recommended)
+aiohttp>=3.10.0
+
+# Vector Store and RAG
+faiss-cpu==1.13.1
+sentence-transformers>=2.7.0
+rank-bm25==0.2.2
+numpy>=1.26.0
+scikit-learn>=1.5.0
+huggingface-hub>=0.20.0
+
+# Database
+sqlalchemy>=2.0.36
+alembic>=1.13.0
+aiosqlite>=0.20.0
+
+# Machine Learning
+torch>=2.9.0
+transformers>=4.40.0
+xgboost==2.0.3
+lightgbm>=4.5.0
+optuna==3.5.0
+shap>=0.45.0
+lime>=0.2.0.1
+
+# Data Processing
+pandas>=2.2.0
+dask==2023.12.0
+# ray>=2.32.0  # Not available for Python 3.14 yet
+
+# Workflow
+# prefect>=3.0.0  # Commented out - not used in codebase and causes dependency conflicts
+
+# Multimodal
+pillow>=10.4.0
+opencv-python>=4.10.0
+pytesseract>=0.3.13
+openai-whisper>=20231117
+
+# Utilities
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+python-multipart>=0.0.12
+aiofiles>=24.1.0
+tenacity>=9.0.0
+rich>=13.7.0
+loguru>=0.7.2
+psutil>=6.0.0
+redis>=5.0.0  # Optional: for distributed caching
+
+# Testing
+pytest>=8.3.0
+pytest-asyncio>=0.24.0
+pytest-cov>=6.0.0
+
