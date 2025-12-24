@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Editor from '@monaco-editor/react';
 import { executeTask, executeTool } from '../api/client';
+import { CircleCheck, CircleX } from 'lucide-react';
 
 // Helper function to detect HTML/CSS code
 const detectCodeType = (code: string): 'html' | 'python' | 'node' | 'bash' => {
@@ -576,7 +577,10 @@ export function CodeEditor() {
               ? 'bg-red-900/30 border-red-500/60 text-red-300'
               : 'bg-green-900/30 border-green-500/60 text-green-300'
           }`}>
-            <span className="text-lg flex-shrink-0">{result.startsWith('Ошибка:') || result.startsWith('Не удалось') ? '❌' : '✅'}</span>
+            {result.startsWith('Ошибка:') || result.startsWith('Не удалось') 
+              ? <CircleX size={18} strokeWidth={1.5} className="flex-shrink-0 mt-0.5" />
+              : <CircleCheck size={18} strokeWidth={1.5} className="flex-shrink-0 mt-0.5" />
+            }
             <span>{result}</span>
           </div>
         )}

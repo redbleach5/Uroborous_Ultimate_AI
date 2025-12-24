@@ -1,6 +1,7 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getMetricsStats } from '../api/client';
+import { BarChart3, ClipboardList, Bot, Wrench, Brain, Loader2 } from 'lucide-react';
 
 export function MetricsPanel() {
   const { data: stats, isLoading } = useQuery({
@@ -13,7 +14,7 @@ export function MetricsPanel() {
     return (
       <div className="p-6 flex items-center justify-center h-full">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <Loader2 size={48} strokeWidth={1.5} className="animate-spin mx-auto mb-4 text-blue-400" />
           <p className="text-gray-400 text-lg">Загрузка метрик...</p>
         </div>
       </div>
@@ -23,14 +24,14 @@ export function MetricsPanel() {
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
-        <span className="text-3xl">📈</span>
+        <BarChart3 size={32} strokeWidth={1.5} className="text-blue-400" />
         <h2 className="text-3xl font-bold text-gray-100">Метрики производительности</h2>
       </div>
 
       {/* Tasks Overview */}
       <div className="bg-gradient-to-br from-[#1a1d2e] to-[#0f111b] p-6 rounded-xl border border-[#2a2f46] shadow-lg">
         <h3 className="text-lg font-semibold mb-4 text-gray-100 flex items-center gap-2">
-          <span>📋</span>
+          <ClipboardList size={18} strokeWidth={1.5} />
           <span>Задачи</span>
         </h3>
         {stats?.tasks && (
@@ -57,14 +58,14 @@ export function MetricsPanel() {
       {stats?.agents && Object.keys(stats.agents).length > 0 && (
         <div className="bg-gradient-to-br from-[#1a1d2e] to-[#0f111b] p-6 rounded-xl border border-[#2a2f46] shadow-lg">
           <h3 className="text-lg font-semibold mb-4 text-gray-100 flex items-center gap-2">
-            <span>🤖</span>
+            <Bot size={18} strokeWidth={1.5} />
             <span>Агенты</span>
           </h3>
           <div className="space-y-3">
             {Object.entries(stats.agents).map(([name, agentStats]: [string, any]) => (
               <div key={name} className="p-4 bg-[#0f111b]/60 rounded-lg border border-[#2a2f46] hover:border-[#3a3f56] transition-colors">
                 <div className="font-semibold text-gray-100 mb-3 flex items-center gap-2">
-                  <span>🤖</span>
+                  <Bot size={16} strokeWidth={1.5} />
                   <span>{name}</span>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
@@ -95,14 +96,14 @@ export function MetricsPanel() {
       {stats?.tools && Object.keys(stats.tools).length > 0 && (
         <div className="bg-gradient-to-br from-[#1a1d2e] to-[#0f111b] p-6 rounded-xl border border-[#2a2f46] shadow-lg">
           <h3 className="text-lg font-semibold mb-4 text-gray-100 flex items-center gap-2">
-            <span>🔧</span>
+            <Wrench size={18} strokeWidth={1.5} />
             <span>Инструменты</span>
           </h3>
           <div className="space-y-3">
             {Object.entries(stats.tools).map(([name, toolStats]: [string, any]) => (
               <div key={name} className="p-4 bg-[#0f111b]/60 rounded-lg border border-[#2a2f46] hover:border-[#3a3f56] transition-colors">
                 <div className="font-semibold text-gray-100 mb-3 flex items-center gap-2">
-                  <span>🔧</span>
+                  <Wrench size={16} strokeWidth={1.5} />
                   <span>{name}</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
@@ -129,14 +130,14 @@ export function MetricsPanel() {
       {stats?.llm && Object.keys(stats.llm).length > 0 && (
         <div className="bg-gradient-to-br from-[#1a1d2e] to-[#0f111b] p-6 rounded-xl border border-[#2a2f46] shadow-lg">
           <h3 className="text-lg font-semibold mb-4 text-gray-100 flex items-center gap-2">
-            <span>🧠</span>
+            <Brain size={18} strokeWidth={1.5} />
             <span>LLM провайдеры</span>
           </h3>
           <div className="space-y-3">
             {Object.entries(stats.llm).map(([key, llmStats]: [string, any]) => (
               <div key={key} className="p-4 bg-[#0f111b]/60 rounded-lg border border-[#2a2f46] hover:border-[#3a3f56] transition-colors">
                 <div className="font-semibold text-gray-100 mb-3 flex items-center gap-2">
-                  <span>🧠</span>
+                  <Brain size={16} strokeWidth={1.5} />
                   <span>{key}</span>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">

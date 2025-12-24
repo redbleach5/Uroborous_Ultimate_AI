@@ -24,6 +24,7 @@ from .metrics import metrics_collector
 from .batch_processor import BatchProcessor
 from .intelligent_monitor import get_monitor, initialize_monitor, IssueSeverity
 from .pydantic_utils import pydantic_to_dict
+from .learning_system import get_learning_system, initialize_learning_system
 
 
 class IDAEngine:
@@ -54,6 +55,7 @@ class IDAEngine:
         self.safety_guard: Optional[SafetyGuard] = None
         self.memory: Optional[LongTermMemory] = None
         self.batch_processor: Optional[BatchProcessor] = None
+        self.learning_system = None  # Will be initialized in initialize()
         
         # Initialize intelligent monitor
         # Всегда используем корневую директорию LOGS_DEBUG
@@ -134,6 +136,10 @@ class IDAEngine:
                 # Pass vector_store to reuse embeddings model and avoid loading twice
                 self.memory = LongTermMemory(self.config.memory, vector_store=self.vector_store)
                 await self.memory.initialize()
+            
+            # Initialize Learning System for persistent agent learning
+            logger.info("Initializing Learning System...")
+            self.learning_system = await initialize_learning_system()
             
             # Initialize Agent Registry
             logger.info("Initializing Agent Registry...")
@@ -348,6 +354,9 @@ class IDAEngine:
         
         if self.memory:
             await self.memory.shutdown()
+        
+        if self.learning_system:
+            await self.learning_system.shutdown()
         
         if self.tool_registry:
             await self.tool_registry.shutdown()

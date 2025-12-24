@@ -1,9 +1,9 @@
 """
-Base Agent class
+Base Agent class with reflection and communication capabilities
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
 from datetime import datetime
 from ..core.logger import get_logger
 logger = get_logger(__name__)
@@ -17,10 +17,22 @@ from ..memory.long_term import LongTermMemory
 from ..core.exceptions import AgentException
 from ..core.logger import structured_logger
 from ..core.pydantic_utils import pydantic_to_dict
+from .reflection_mixin import ReflectionMixin
+
+if TYPE_CHECKING:
+    from .communicator import AgentCommunicator
 
 
-class BaseAgent(ABC):
-    """Base class for all agents"""
+class BaseAgent(ABC, ReflectionMixin):
+    """
+    Base class for all agents with reflection and communication capabilities.
+    
+    Features:
+    - Automatic reflection and self-correction
+    - Inter-agent communication via AgentCommunicator
+    - Task delegation to other agents
+    - Quality tracking and improvement
+    """
     
     def __init__(
         self,
@@ -42,6 +54,9 @@ class BaseAgent(ABC):
             context_manager: Context manager
             memory: Long term memory
         """
+        # Initialize ReflectionMixin
+        ReflectionMixin.__init__(self)
+        
         self.name = name
         self.config = config
         self.enabled = config.get("enabled", True)
@@ -56,6 +71,17 @@ class BaseAgent(ABC):
         self.memory = memory
         
         self._initialized = False
+        
+        # Communication
+        self._communicator: Optional["AgentCommunicator"] = None
+        
+        # Configure reflection from config
+        reflection_config = config.get("reflection", {})
+        self.configure_reflection(
+            enabled=reflection_config.get("enabled", True),
+            max_retries=reflection_config.get("max_retries", 2),
+            min_quality_threshold=reflection_config.get("min_quality_threshold", 60.0)
+        )
     
     async def initialize(self) -> None:
         """Initialize agent"""
@@ -69,50 +95,74 @@ class BaseAgent(ABC):
         self._initialized = True
         logger.info(f"Agent {self.name} initialized")
     
+    def set_communicator(self, communicator: "AgentCommunicator") -> None:
+        """Set the agent communicator for inter-agent communication"""
+        self._communicator = communicator
+    
     async def execute(self, task: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Execute a task
+        Execute a task with optional reflection and self-correction.
         
         Args:
             task: Task description
             context: Additional context
             
         Returns:
-            Result dictionary
+            Result dictionary with optional reflection data
         """
         if not self._initialized:
             await self.initialize()
         
         start_time = time.time()
+        ctx = context or {}
         
         try:
             structured_logger.log_agent_action(
                 agent_name=self.name,
                 action="execute_start",
                 task=task,
-                context=context
+                context=ctx
             )
             
-            result = await self._execute_impl(task, context or {})
+            # Check if reflection is enabled and not in correction mode
+            use_reflection = (
+                self._reflection_enabled and 
+                not ctx.get("_correction_mode", False) and
+                not ctx.get("_skip_reflection", False)
+            )
+            
+            if use_reflection:
+                # Execute with reflection loop
+                result = await self.execute_with_reflection(
+                    task=task,
+                    context=ctx,
+                    execute_fn=self._execute_impl
+                )
+            else:
+                # Direct execution without reflection
+                result = await self._execute_impl(task, ctx)
             
             duration = time.time() - start_time
+            result["_execution_time"] = duration
+            
             structured_logger.log_agent_action(
                 agent_name=self.name,
                 action="execute_complete",
                 task=task,
-                context=context,
+                context=ctx,
                 result=result,
                 duration=duration
             )
             
             return result
+            
         except Exception as e:
             duration = time.time() - start_time
             structured_logger.log_agent_action(
                 agent_name=self.name,
                 action="execute_error",
                 task=task,
-                context=context,
+                context=ctx,
                 result={"success": False, "error": str(e)},
                 duration=duration
             )
@@ -135,6 +185,136 @@ class BaseAgent(ABC):
     async def shutdown(self) -> None:
         """Shutdown agent"""
         self._initialized = False
+    
+    # ==================== Inter-Agent Communication ====================
+    
+    async def delegate_to(
+        self,
+        agent_type: str,
+        subtask: str,
+        context: Optional[Dict[str, Any]] = None,
+        timeout: float = 120.0
+    ) -> Dict[str, Any]:
+        """
+        Delegate a subtask to another agent.
+        
+        Args:
+            agent_type: Type of agent to delegate to (e.g., "research", "code_writer")
+            subtask: Description of the subtask
+            context: Context to pass to the delegated agent
+            timeout: Timeout in seconds
+            
+        Returns:
+            Result from the delegated agent
+            
+        Raises:
+            AgentException: If communicator not available or delegation fails
+        """
+        if not self._communicator:
+            raise AgentException(
+                f"Agent {self.name}: Communicator not available for delegation. "
+                "Ensure AgentCommunicator is initialized and set."
+            )
+        
+        logger.info(f"Agent {self.name}: Delegating subtask to {agent_type}: {subtask[:50]}...")
+        
+        result = await self._communicator.delegate_subtask(
+            from_agent=self.name,
+            to_agent=agent_type,
+            subtask=subtask,
+            context=context,
+            timeout=timeout
+        )
+        
+        if result.success:
+            logger.info(
+                f"Agent {self.name}: Delegation to {agent_type} successful "
+                f"(took {result.execution_time:.2f}s)"
+            )
+        else:
+            logger.warning(
+                f"Agent {self.name}: Delegation to {agent_type} failed: {result.error}"
+            )
+        
+        return result.to_dict()
+    
+    async def request_help(
+        self,
+        capability: str,
+        task: str,
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Request help from an agent with a specific capability.
+        
+        Args:
+            capability: Required capability (e.g., "code_generation", "data_analysis")
+            task: Task description
+            context: Context to pass
+            
+        Returns:
+            Result from the helper agent
+        """
+        if not self._communicator:
+            raise AgentException(
+                f"Agent {self.name}: Communicator not available for help request"
+            )
+        
+        from .communicator import AgentCapability
+        
+        try:
+            cap = AgentCapability(capability)
+        except ValueError:
+            raise AgentException(f"Unknown capability: {capability}")
+        
+        logger.info(f"Agent {self.name}: Requesting help with capability {capability}")
+        
+        result = await self._communicator.request_help(
+            from_agent=self.name,
+            capability=cap,
+            task=task,
+            context=context
+        )
+        
+        return result.to_dict()
+    
+    async def broadcast_message(self, content: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Broadcast a message to all agents.
+        
+        Args:
+            content: Message content
+            
+        Returns:
+            Responses from all agents
+        """
+        if not self._communicator:
+            raise AgentException(
+                f"Agent {self.name}: Communicator not available for broadcast"
+            )
+        
+        return await self._communicator.broadcast_to_all(
+            from_agent=self.name,
+            content=content
+        )
+    
+    async def on_broadcast(self, content: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle a broadcast message from another agent.
+        Override in subclasses to implement custom broadcast handling.
+        
+        Args:
+            content: Broadcast message content
+            
+        Returns:
+            Response to the broadcast
+        """
+        # Default implementation - just acknowledge
+        return {
+            "agent": self.name,
+            "acknowledged": True,
+            "message": f"Broadcast received by {self.name}"
+        }
     
     def _determine_task_type(self) -> Optional[str]:
         """
@@ -268,7 +448,7 @@ class BaseAgent(ABC):
 
 
 class AgentRegistry:
-    """Registry for managing all agents"""
+    """Registry for managing all agents with inter-agent communication"""
     
     def __init__(
         self,
@@ -296,9 +476,12 @@ class AgentRegistry:
         
         self.agents: Dict[str, BaseAgent] = {}
         self._initialized = False
+        
+        # Agent communicator for inter-agent communication
+        self._communicator: Optional["AgentCommunicator"] = None
     
     async def initialize(self) -> None:
-        """Initialize all agents"""
+        """Initialize all agents and set up inter-agent communication"""
         if self._initialized:
             return
         
@@ -312,6 +495,7 @@ class AgentRegistry:
         from .workflow import WorkflowAgent
         from .integration import IntegrationAgent
         from .monitoring import MonitoringAgent
+        from .communicator import AgentCommunicator, set_communicator
         
         # Initialize CodeWriterAgent
         if hasattr(self.config, "code_writer") and self.config.code_writer.enabled:
@@ -404,7 +588,18 @@ class AgentRegistry:
             await agent.initialize()
             self.agents["monitoring"] = agent
         
-        logger.info(f"Initialized {len(self.agents)} agents")
+        # Initialize AgentCommunicator for inter-agent communication
+        self._communicator = AgentCommunicator(self)
+        await self._communicator.initialize()
+        
+        # Set communicator for all agents
+        for agent in self.agents.values():
+            agent.set_communicator(self._communicator)
+        
+        # Set global communicator
+        set_communicator(self._communicator)
+        
+        logger.info(f"Initialized {len(self.agents)} agents with inter-agent communication")
         self._initialized = True
     
     async def get_agent(self, agent_type: str) -> Optional[BaseAgent]:
@@ -416,9 +611,19 @@ class AgentRegistry:
         return list(self.agents.keys())
     
     async def shutdown(self) -> None:
-        """Shutdown all agents"""
+        """Shutdown all agents and communicator"""
+        # Shutdown communicator first
+        if self._communicator:
+            await self._communicator.shutdown()
+            self._communicator = None
+        
+        # Shutdown all agents
         for agent in self.agents.values():
             await agent.shutdown()
         self.agents.clear()
         self._initialized = False
+    
+    def get_communicator(self) -> Optional["AgentCommunicator"]:
+        """Get the agent communicator"""
+        return self._communicator
 

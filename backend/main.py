@@ -10,7 +10,7 @@ import uvicorn
 from .config import get_config
 from .core.engine import IDAEngine
 from .core.logger import get_logger, configure_logging
-from .api.routers import tasks, code, tools, preview, config as config_router, monitoring, project, multimodal, metrics, batch, feedback
+from .api.routers import tasks, code, tools, preview, config as config_router, monitoring, project, multimodal, metrics, batch, feedback, learning
 from .api.docs import custom_openapi
 from .core.safety_utils import setup_signal_handlers
 from .core.preview_manager import PreviewManager
@@ -116,6 +116,7 @@ app.include_router(multimodal.router, prefix="/api/v1", tags=["multimodal"])
 app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 app.include_router(batch.router, prefix="/api/v1", tags=["batch"])
 app.include_router(feedback.router, prefix="/api/v1", tags=["feedback"])
+app.include_router(learning.router, prefix="/api/v1", tags=["learning"])
 
 
 @app.get("/")

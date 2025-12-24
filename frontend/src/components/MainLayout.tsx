@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { UnifiedChat } from './UnifiedChat';
-import { CodeEditor } from './CodeEditor';
+import { IDE } from './IDE';
 import { ToolsPanel } from './ToolsPanel';
 import { ProjectIndexer } from './ProjectIndexer';
 import { MonitoringPanel } from './MonitoringPanel';
@@ -10,10 +10,15 @@ import { LearningDashboard } from './LearningDashboard';
 import SettingsPanel from './SettingsPanel';
 import { getStatus } from '../api/client';
 import { useExecutionInfo } from '../state/executionContext';
+import {
+  MessageSquare, Code2, Terminal, Database, Activity, BarChart3, 
+  GraduationCap, Settings, Bot, Brain, Wrench
+} from 'lucide-react';
+import { UroborosLogo } from './icons/UroborosLogo';
 
 export function MainLayout() {
   const [activeTab, setActiveTab] = useState<
-    'chat' | 'editor' | 'tools' | 'indexer' | 'monitoring' | 'metrics' | 'learning' | 'settings'
+    'chat' | 'ide' | 'tools' | 'indexer' | 'monitoring' | 'metrics' | 'learning' | 'settings'
   >('chat');
 
   const { executionInfo } = useExecutionInfo();
@@ -89,8 +94,8 @@ export function MainLayout() {
       <header className="bg-gradient-to-r from-[#131524] to-[#1a1d2e] px-6 py-3 border-b border-[#1f2236] flex items-center justify-between shadow-lg">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-bold text-gray-100 flex items-center gap-2">
-            <span>🤖</span>
-            <span>AILLM</span>
+            <UroborosLogo size={32} className="drop-shadow-lg" />
+            <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-violet-400 bg-clip-text text-transparent">AILLM</span>
           </h1>
           <span className="text-xs text-gray-500">|</span>
           <span className="text-xs text-gray-400">Автономные интеллектуальные LLM агенты</span>
@@ -99,13 +104,13 @@ export function MainLayout() {
           {executionInfo && (
             <>
               {executionInfo.agent && (
-                <span className="px-2.5 py-1 bg-blue-600/30 border border-blue-500/30 text-blue-300 rounded-lg text-[11px] font-medium backdrop-blur-sm">
-                  🤖 {executionInfo.agent}
+                <span className="px-2.5 py-1 bg-blue-600/30 border border-blue-500/30 text-blue-300 rounded-lg text-[11px] font-medium backdrop-blur-sm flex items-center gap-1">
+                  <Bot size={12} strokeWidth={1.5} /> {executionInfo.agent}
                 </span>
               )}
               {executionInfo.models && executionInfo.models.length > 0 && (
-                <span className="px-2.5 py-1 bg-purple-600/30 border border-purple-500/30 text-purple-300 rounded-lg text-[11px] font-medium backdrop-blur-sm">
-                  🧠 {executionInfo.models.slice(0, 2).join(', ')}
+                <span className="px-2.5 py-1 bg-purple-600/30 border border-purple-500/30 text-purple-300 rounded-lg text-[11px] font-medium backdrop-blur-sm flex items-center gap-1">
+                  <Brain size={12} strokeWidth={1.5} /> {executionInfo.models.slice(0, 2).join(', ')}
                   {executionInfo.models.length > 2 && '...'}
                 </span>
               )}
@@ -138,19 +143,19 @@ export function MainLayout() {
               : 'text-gray-400 hover:text-white hover:bg-[#1f2236]'
           }`}
         >
-          <span>💬</span>
+          <MessageSquare size={16} strokeWidth={1.5} />
           <span>Чат</span>
         </button>
         <button
-          onClick={() => setActiveTab('editor')}
+          onClick={() => setActiveTab('ide')}
           className={`px-5 py-3 whitespace-nowrap font-medium transition-all duration-200 flex items-center gap-2 ${
-            activeTab === 'editor' 
-              ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-600/30 border-b-2 border-blue-500' 
+            activeTab === 'ide' 
+              ? 'bg-gradient-to-r from-green-600 to-teal-600 text-white shadow-lg shadow-green-600/30 border-b-2 border-green-500' 
               : 'text-gray-400 hover:text-white hover:bg-[#1f2236]'
           }`}
         >
-          <span>📝</span>
-          <span>Редактор кода</span>
+          <Code2 size={16} strokeWidth={1.5} />
+          <span>IDE</span>
         </button>
         <button
           onClick={() => setActiveTab('tools')}
@@ -160,7 +165,7 @@ export function MainLayout() {
               : 'text-gray-400 hover:text-white hover:bg-[#1f2236]'
           }`}
         >
-          <span>🔧</span>
+          <Wrench size={16} strokeWidth={1.5} />
           <span>Инструменты</span>
         </button>
         <button
@@ -171,7 +176,7 @@ export function MainLayout() {
               : 'text-gray-400 hover:text-white hover:bg-[#1f2236]'
           }`}
         >
-          <span>📚</span>
+          <Database size={16} strokeWidth={1.5} />
           <span>Индексация</span>
         </button>
         <button
@@ -182,7 +187,7 @@ export function MainLayout() {
               : 'text-gray-400 hover:text-white hover:bg-[#1f2236]'
           }`}
         >
-          <span>📊</span>
+          <Activity size={16} strokeWidth={1.5} />
           <span>Мониторинг</span>
         </button>
         <button
@@ -193,7 +198,7 @@ export function MainLayout() {
               : 'text-gray-400 hover:text-white hover:bg-[#1f2236]'
           }`}
         >
-          <span>📈</span>
+          <BarChart3 size={16} strokeWidth={1.5} />
           <span>Метрики</span>
         </button>
         <button
@@ -204,7 +209,7 @@ export function MainLayout() {
               : 'text-gray-400 hover:text-white hover:bg-[#1f2236]'
           }`}
         >
-          <span>🎓</span>
+          <GraduationCap size={16} strokeWidth={1.5} />
           <span>Обучение</span>
         </button>
         <button
@@ -215,7 +220,7 @@ export function MainLayout() {
               : 'text-gray-400 hover:text-white hover:bg-[#1f2236]'
           }`}
         >
-          <span>⚙️</span>
+          <Settings size={16} strokeWidth={1.5} />
           <span>Настройки</span>
         </button>
       </div>
@@ -223,7 +228,7 @@ export function MainLayout() {
       {/* Content */}
       <div className="flex-1 overflow-hidden">
         {activeTab === 'chat' && <UnifiedChat />}
-        {activeTab === 'editor' && <CodeEditor />}
+        {activeTab === 'ide' && <IDE />}
         {activeTab === 'tools' && <ToolsPanel />}
         {activeTab === 'indexer' && <ProjectIndexer />}
         {activeTab === 'monitoring' && <MonitoringPanel />}

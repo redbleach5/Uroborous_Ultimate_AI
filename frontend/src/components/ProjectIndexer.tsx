@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { indexProject } from '../api/client';
+import { Database, Folder, Zap, CircleCheck, CircleX, Loader2 } from 'lucide-react';
 
 export function ProjectIndexer() {
   const [projectPath, setProjectPath] = useState('');
@@ -26,13 +27,13 @@ export function ProjectIndexer() {
     <div className="p-6 max-w-4xl mx-auto">
       <div className="bg-gradient-to-br from-[#1a1d2e] to-[#0f111b] p-6 rounded-xl border border-[#2a2f46] shadow-lg">
         <div className="flex items-center gap-3 mb-6">
-          <span className="text-3xl">📚</span>
+          <Database size={32} strokeWidth={1.5} className="text-blue-400" />
           <h3 className="text-2xl font-bold text-gray-100">Индексация проекта</h3>
         </div>
         <div className="space-y-5">
           <div>
             <label className="block text-sm font-semibold mb-3 text-gray-100 flex items-center gap-2">
-              <span>📁</span>
+              <Folder size={16} strokeWidth={1.5} />
               <span>Путь к проекту</span>
             </label>
             <input
@@ -50,12 +51,12 @@ export function ProjectIndexer() {
           >
             {indexMutation.isPending ? (
               <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <Loader2 size={16} strokeWidth={1.5} className="animate-spin" />
                 <span>Индексация...</span>
               </>
             ) : (
               <>
-                <span>⚡</span>
+                <Zap size={16} strokeWidth={1.5} />
                 <span>Индексировать проект</span>
               </>
             )}
@@ -68,7 +69,13 @@ export function ProjectIndexer() {
                 ? 'bg-red-900/30 border-red-500/60 text-red-300'
                 : 'bg-blue-900/30 border-blue-500/60 text-blue-300'
             }`}>
-              <span className="text-lg flex-shrink-0">{status.startsWith('✓') ? '✅' : status.startsWith('✗') ? '❌' : '⏳'}</span>
+              {status.startsWith('✓') ? (
+                <CircleCheck size={18} strokeWidth={1.5} className="flex-shrink-0 mt-0.5" />
+              ) : status.startsWith('✗') ? (
+                <CircleX size={18} strokeWidth={1.5} className="flex-shrink-0 mt-0.5" />
+              ) : (
+                <Loader2 size={18} strokeWidth={1.5} className="flex-shrink-0 mt-0.5 animate-spin" />
+              )}
               <span className="text-sm font-medium">{status}</span>
             </div>
           )}

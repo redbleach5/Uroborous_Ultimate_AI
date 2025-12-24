@@ -71,11 +71,22 @@ context:
 
 # Agents Configuration
 agents:
+  # Global reflection settings for all agents (can be overridden per agent)
+  # Reflection enables self-correction: agents analyze their results and retry if quality is low
+  reflection:
+    enabled: true
+    max_retries: 2        # Max correction attempts per task
+    min_quality_threshold: 60.0  # Min score (0-100) to consider task complete
+  
   code_writer:
     enabled: true
     default_model: null  # null = use default provider model
     temperature: 0.7
     max_iterations: 10
+    reflection:
+      enabled: true
+      max_retries: 2
+      min_quality_threshold: 70.0  # Higher threshold for code quality
     
   react:
     enabled: true
@@ -83,33 +94,55 @@ agents:
     temperature: 0.5
     max_iterations: 20
     max_tool_calls: 10
+    reflection:
+      enabled: true
+      max_retries: 2
+      min_quality_threshold: 60.0
     
   research:
     enabled: true
     default_model: null
     temperature: 0.3
     max_iterations: 15
+    reflection:
+      enabled: true
+      max_retries: 1
+      min_quality_threshold: 50.0
     
   data_analysis:
     enabled: true
     default_model: null
     temperature: 0.2
     max_iterations: 25
+    reflection:
+      enabled: true
+      max_retries: 2
+      min_quality_threshold: 65.0
     
   workflow:
     enabled: true
     default_model: null
     temperature: 0.3
+    reflection:
+      enabled: true
+      max_retries: 1
+      min_quality_threshold: 60.0
     
   integration:
     enabled: true
     default_model: null
     temperature: 0.4
+    reflection:
+      enabled: true
+      max_retries: 1
+      min_quality_threshold: 60.0
     
   monitoring:
     enabled: true
     default_model: null
     temperature: 0.2
+    reflection:
+      enabled: false  # Monitoring doesn't need reflection
 
 # Orchestrator Configuration
 orchestrator:

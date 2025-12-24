@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getFeedbackStats, getFeedbackRecommendations } from '../api/client';
+import { 
+  GraduationCap, RefreshCw, BookOpen, Star, CircleCheck, Brain, BarChart3,
+  Trophy, Lightbulb, TrendingUp, AlertTriangle, Bot, Loader2, Sparkles, BarChart,
+  MessageSquare, Zap, Target
+} from 'lucide-react';
 
 // Компонент прогресс-бара
 function ProgressBar({ value, max = 100, color = 'blue', label }: { 
@@ -83,7 +88,7 @@ function StatCard({ title, value, subtitle, icon, trend, color = 'blue' }: {
   title: string;
   value: string | number;
   subtitle?: string;
-  icon: string;
+  icon: React.ReactNode;
   trend?: { value: number; positive: boolean };
   color?: string;
 }) {
@@ -95,6 +100,14 @@ function StatCard({ title, value, subtitle, icon, trend, color = 'blue' }: {
     cyan: 'from-cyan-600/20 to-cyan-700/10 border-cyan-500/30',
   };
   
+  const iconColors: Record<string, string> = {
+    blue: 'text-blue-400',
+    green: 'text-emerald-400',
+    purple: 'text-purple-400',
+    amber: 'text-amber-400',
+    cyan: 'text-cyan-400',
+  };
+  
   return (
     <div className={`p-4 rounded-xl bg-gradient-to-br ${bgColors[color] || bgColors.blue} border backdrop-blur-sm`}>
       <div className="flex items-start justify-between">
@@ -103,7 +116,7 @@ function StatCard({ title, value, subtitle, icon, trend, color = 'blue' }: {
           <p className="text-2xl font-bold text-white mt-1">{value}</p>
           {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
         </div>
-        <span className="text-2xl">{icon}</span>
+        <span className={iconColors[color] || iconColors.blue}>{icon}</span>
       </div>
       {trend && (
         <div className={`flex items-center gap-1 mt-2 text-xs ${trend.positive ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -135,7 +148,7 @@ function ModelPerformanceCard({ model }: { model: any }) {
     <div className="p-4 bg-[#1a1d2e]/50 rounded-lg border border-[#2a2f46] hover:border-[#3a3f56] transition-colors">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <span className="text-lg">🧠</span>
+          <Brain size={18} strokeWidth={1.5} className="text-purple-400" />
           <div>
             <p className="font-medium text-white text-sm">{model.model_name}</p>
             <p className="text-xs text-gray-500">{model.provider}</p>
@@ -153,8 +166,8 @@ function ModelPerformanceCard({ model }: { model: any }) {
           label="Success Rate"
         />
         <div className="flex justify-between text-xs text-gray-400">
-          <span>📊 {model.total_requests || 0} запросов</span>
-          <span>⚡ {(model.avg_tokens_per_sec || 0).toFixed(1)} tok/s</span>
+          <span className="flex items-center gap-1"><BarChart size={10} strokeWidth={1.5} /> {model.total_requests || 0} запросов</span>
+          <span className="flex items-center gap-1"><Zap size={10} strokeWidth={1.5} /> {(model.avg_tokens_per_sec || 0).toFixed(1)} tok/s</span>
         </div>
       </div>
     </div>
@@ -163,11 +176,13 @@ function ModelPerformanceCard({ model }: { model: any }) {
 
 // Компонент рекомендации
 function RecommendationCard({ rec }: { rec: any }) {
-  const typeIcons: Record<string, string> = {
-    agent_improvement: '🤖',
-    model_concern: '⚠️',
-    general: '💡',
-    performance: '📈',
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'agent_improvement': return <Bot size={16} strokeWidth={1.5} className="text-blue-400" />;
+      case 'model_concern': return <AlertTriangle size={16} strokeWidth={1.5} className="text-amber-400" />;
+      case 'performance': return <TrendingUp size={16} strokeWidth={1.5} className="text-emerald-400" />;
+      default: return <Lightbulb size={16} strokeWidth={1.5} className="text-purple-400" />;
+    }
   };
   
   const typeColors: Record<string, string> = {
@@ -180,7 +195,7 @@ function RecommendationCard({ rec }: { rec: any }) {
   return (
     <div className={`p-3 rounded-lg border ${typeColors[rec.type] || typeColors.general}`}>
       <div className="flex items-start gap-2">
-        <span className="text-lg">{typeIcons[rec.type] || '💡'}</span>
+        {getTypeIcon(rec.type)}
         <p className="text-sm text-gray-300">{rec.suggestion}</p>
       </div>
     </div>
@@ -230,7 +245,7 @@ export function LearningDashboard() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-              <span className="text-3xl">🎓</span>
+              <GraduationCap size={32} strokeWidth={1.5} className="text-purple-400" />
               Обучение системы
             </h1>
             <p className="text-gray-400 mt-1">
@@ -241,7 +256,7 @@ export function LearningDashboard() {
             onClick={() => refetchStats()}
             className="px-4 py-2 bg-blue-600/20 border border-blue-500/30 text-blue-300 rounded-lg hover:bg-blue-600/30 transition-colors flex items-center gap-2"
           >
-            <span>🔄</span>
+            <RefreshCw size={16} strokeWidth={1.5} />
             Обновить
           </button>
         </div>
@@ -252,28 +267,28 @@ export function LearningDashboard() {
             title="Общий опыт"
             value={totalExperience}
             subtitle="обработанных запросов"
-            icon="📚"
+            icon={<BookOpen size={24} strokeWidth={1.5} />}
             color="blue"
           />
           <StatCard
             title="Средний рейтинг"
-            value={`${(solutionFeedback.avg_rating || 0).toFixed(1)} ⭐`}
+            value={`${(solutionFeedback.avg_rating || 0).toFixed(1)}`}
             subtitle="из 5.0"
-            icon="⭐"
+            icon={<Star size={24} strokeWidth={1.5} />}
             color="amber"
           />
           <StatCard
             title="Полезность"
             value={`${(solutionFeedback.helpful_percentage || 0).toFixed(0)}%`}
             subtitle="полезных решений"
-            icon="✅"
+            icon={<CircleCheck size={24} strokeWidth={1.5} />}
             color="green"
           />
           <StatCard
             title="Модели"
             value={learningInsights.models_analyzed || 0}
             subtitle="отслеживается"
-            icon="🧠"
+            icon={<Brain size={24} strokeWidth={1.5} />}
             color="purple"
           />
         </div>
@@ -283,7 +298,7 @@ export function LearningDashboard() {
           {/* Progress Circle */}
           <div className="bg-gradient-to-br from-[#131524] to-[#1a1d2e] rounded-xl p-6 border border-[#2a2f46]">
             <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <span>📊</span>
+              <BarChart3 size={18} strokeWidth={1.5} />
               Прогресс обучения
             </h3>
             <div className="flex flex-col items-center">
@@ -293,10 +308,10 @@ export function LearningDashboard() {
                 strokeWidth={12}
                 color={learningProgress >= 70 ? '#10b981' : learningProgress >= 40 ? '#f59e0b' : '#3b82f6'}
               />
-              <p className="text-gray-400 text-sm mt-4 text-center">
-                {learningProgress < 30 && '🌱 Начальный этап обучения'}
-                {learningProgress >= 30 && learningProgress < 70 && '📈 Активное накопление опыта'}
-                {learningProgress >= 70 && '🎯 Система обучена и оптимизирована'}
+              <p className="text-gray-400 text-sm mt-4 text-center flex items-center justify-center gap-2">
+                {learningProgress < 30 && <><Sparkles size={14} strokeWidth={1.5} /> Начальный этап обучения</>}
+                {learningProgress >= 30 && learningProgress < 70 && <><TrendingUp size={14} strokeWidth={1.5} /> Активное накопление опыта</>}
+                {learningProgress >= 70 && <><Target size={14} strokeWidth={1.5} /> Система обучена и оптимизирована</>}
               </p>
             </div>
             
@@ -326,7 +341,7 @@ export function LearningDashboard() {
           {/* Top Performers */}
           <div className="bg-gradient-to-br from-[#131524] to-[#1a1d2e] rounded-xl p-6 border border-[#2a2f46]">
             <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <span>🏆</span>
+              <Trophy size={18} strokeWidth={1.5} />
               Лучшие модели
             </h3>
             <div className="space-y-3">
@@ -336,7 +351,7 @@ export function LearningDashboard() {
                 ))
               ) : (
                 <div className="text-center py-8 text-gray-500">
-                  <span className="text-4xl block mb-2">📊</span>
+                  <BarChart3 size={40} strokeWidth={1} className="mx-auto mb-2 text-gray-600" />
                   <p>Пока недостаточно данных</p>
                   <p className="text-xs mt-1">Нужно минимум 3 запроса к модели</p>
                 </div>
@@ -347,7 +362,7 @@ export function LearningDashboard() {
           {/* Recommendations */}
           <div className="bg-gradient-to-br from-[#131524] to-[#1a1d2e] rounded-xl p-6 border border-[#2a2f46]">
             <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <span>💡</span>
+              <Lightbulb size={18} strokeWidth={1.5} />
               Рекомендации
             </h3>
             <div className="space-y-3">
@@ -357,7 +372,7 @@ export function LearningDashboard() {
                 ))
               ) : (
                 <div className="text-center py-8 text-gray-500">
-                  <span className="text-4xl block mb-2">✨</span>
+                  <Sparkles size={40} strokeWidth={1} className="mx-auto mb-2 text-gray-600" />
                   <p>Все работает отлично!</p>
                   <p className="text-xs mt-1">Рекомендации появятся по мере использования</p>
                 </div>
@@ -370,7 +385,7 @@ export function LearningDashboard() {
         {learningInsights.top_performers && learningInsights.top_performers.length > 0 && (
           <div className="bg-gradient-to-br from-[#131524] to-[#1a1d2e] rounded-xl p-6 border border-[#2a2f46]">
             <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <span>🧠</span>
+              <Brain size={18} strokeWidth={1.5} />
               Производительность моделей
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -385,7 +400,7 @@ export function LearningDashboard() {
         {solutionFeedback.recent_trends && solutionFeedback.recent_trends.length > 0 && (
           <div className="bg-gradient-to-br from-[#131524] to-[#1a1d2e] rounded-xl p-6 border border-[#2a2f46]">
             <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <span>📈</span>
+              <TrendingUp size={18} strokeWidth={1.5} />
               Тренды за последние 7 дней
             </h3>
             <div className="grid grid-cols-7 gap-2">
@@ -426,7 +441,7 @@ export function LearningDashboard() {
         {learningInsights.underperformers && learningInsights.underperformers.length > 0 && (
           <div className="bg-gradient-to-br from-red-900/20 to-red-800/10 rounded-xl p-6 border border-red-500/30">
             <h3 className="text-lg font-semibold text-red-300 mb-4 flex items-center gap-2">
-              <span>⚠️</span>
+              <AlertTriangle size={18} strokeWidth={1.5} />
               Требуют внимания
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -456,7 +471,7 @@ export function LearningDashboard() {
         {/* Empty State */}
         {totalExperience === 0 && (
           <div className="bg-gradient-to-br from-[#131524] to-[#1a1d2e] rounded-xl p-12 border border-[#2a2f46] text-center">
-            <span className="text-6xl block mb-4">🎓</span>
+            <GraduationCap size={64} strokeWidth={1} className="mx-auto mb-4 text-purple-400" />
             <h3 className="text-xl font-semibold text-white mb-2">
               Система готова к обучению
             </h3>
@@ -465,11 +480,11 @@ export function LearningDashboard() {
               Система автоматически будет учиться на каждом запросе и улучшать качество ответов.
             </p>
             <div className="mt-6 flex justify-center gap-4">
-              <div className="px-4 py-2 bg-blue-600/20 border border-blue-500/30 rounded-lg text-blue-300 text-sm">
-                💬 Отправьте первый запрос в чате
+              <div className="px-4 py-2 bg-blue-600/20 border border-blue-500/30 rounded-lg text-blue-300 text-sm flex items-center gap-2">
+                <MessageSquare size={14} strokeWidth={1.5} /> Отправьте первый запрос в чате
               </div>
-              <div className="px-4 py-2 bg-purple-600/20 border border-purple-500/30 rounded-lg text-purple-300 text-sm">
-                ⭐ Оценивайте ответы для обучения
+              <div className="px-4 py-2 bg-purple-600/20 border border-purple-500/30 rounded-lg text-purple-300 text-sm flex items-center gap-2">
+                <Star size={14} strokeWidth={1.5} /> Оценивайте ответы для обучения
               </div>
             </div>
           </div>

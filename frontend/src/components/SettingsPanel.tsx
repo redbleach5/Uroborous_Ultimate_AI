@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getConfig, updateConfig, checkAvailability, checkOllamaServer } from '../api/client';
+import { Settings, CircleX, RefreshCw, FileCode, Loader2, AlertTriangle, Lightbulb, Bot } from 'lucide-react';
 
 function get(obj: any, path: string, defaultValue?: any) {
   return path.split('.').reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : undefined), obj) ?? defaultValue;
@@ -270,7 +271,7 @@ export default function SettingsPanel() {
     return (
       <div className="p-6 flex items-center justify-center h-full">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <Loader2 size={48} strokeWidth={1.5} className="animate-spin mx-auto mb-4 text-blue-400" />
           <p className="text-gray-400 text-lg">Загрузка настроек...</p>
         </div>
       </div>
@@ -281,7 +282,7 @@ export default function SettingsPanel() {
     return (
       <div className="p-6">
         <div className="p-4 bg-red-900/30 border-2 border-red-500/60 rounded-xl text-red-300 flex items-start gap-2">
-          <span className="text-lg flex-shrink-0">❌</span>
+          <CircleX size={20} strokeWidth={1.5} className="flex-shrink-0 mt-0.5" />
           <div>
             <div className="font-semibold mb-1">Ошибка</div>
             <div className="text-sm">{(error as any)?.message || 'Не удалось загрузить настройки'}</div>
@@ -328,12 +329,13 @@ export default function SettingsPanel() {
         <div className="w-1/2 p-6 space-y-6 overflow-y-auto border-r border-[#1f2236] bg-[#131524]">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-3xl font-bold text-gray-100 flex items-center gap-3">
-              <span>⚙️</span>
+              <Settings size={32} strokeWidth={1.5} className="text-blue-400" />
               <span>Настройки</span>
             </h2>
             {hasChanges && (
-              <span className="text-xs bg-yellow-900/40 border border-yellow-500/30 text-yellow-300 px-3 py-1.5 rounded-lg font-medium">
-                ⚠️ Есть несохранённые изменения
+              <span className="text-xs bg-yellow-900/40 border border-yellow-500/30 text-yellow-300 px-3 py-1.5 rounded-lg font-medium flex items-center gap-1">
+                <AlertTriangle size={12} strokeWidth={1.5} />
+                Есть несохранённые изменения
               </span>
             )}
           </div>
@@ -355,12 +357,12 @@ export default function SettingsPanel() {
               >
                 {checkingAvailability ? (
                   <>
-                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <Loader2 size={14} strokeWidth={1.5} className="animate-spin" />
                     <span>Проверка...</span>
                   </>
                 ) : (
                   <>
-                    <span>🔄</span>
+                    <RefreshCw size={14} strokeWidth={1.5} />
                     <span>Проверить все</span>
                   </>
                 )}
@@ -598,10 +600,10 @@ export default function SettingsPanel() {
           {get(localConfig, 'llm.providers.ollama') && (
             <div className="bg-[#1a1d2e] p-5 rounded-xl border-2 border-[#2a2f46]">
               <div className="flex items-center justify-between mb-4">
-                <h4 className="text-sm font-semibold text-gray-100 flex items-center gap-2">
-                  <span>🦙</span>
-                  <span>Ollama (Локальные модели)</span>
-                </h4>
+                  <h4 className="text-sm font-semibold text-gray-100 flex items-center gap-2">
+                    <Bot size={16} strokeWidth={1.5} className="text-purple-400" />
+                    <span>Ollama (Локальные модели)</span>
+                  </h4>
                 <span className="text-xs px-2.5 py-1 bg-green-900/40 border border-green-500/30 text-green-300 rounded-lg font-medium">Приоритетный</span>
               </div>
               <div className="space-y-4">
@@ -645,7 +647,7 @@ export default function SettingsPanel() {
           {get(localConfig, 'llm.providers.openai') && (
             <div className="bg-[#1a1d2e] p-5 rounded-xl border-2 border-[#2a2f46]">
               <h4 className="text-sm font-semibold mb-4 text-gray-100 flex items-center gap-2">
-                <span>🤖</span>
+                <Bot size={16} strokeWidth={1.5} className="text-green-400" />
                 <span>OpenAI</span>
               </h4>
               <div className="space-y-4">
@@ -669,7 +671,7 @@ export default function SettingsPanel() {
                 </div>
                 <div className="bg-blue-900/30 border-2 border-blue-500/40 rounded-xl p-3">
                   <p className="text-xs text-blue-300 flex items-start gap-2">
-                    <span>💡</span>
+                    <Lightbulb size={14} strokeWidth={1.5} className="flex-shrink-0 mt-0.5" />
                     <span>API ключ должен быть установлен через переменную окружения <code className="bg-[#0f111b] px-2 py-0.5 rounded-lg border border-[#1f2236]">OPENAI_API_KEY</code></span>
                   </p>
                 </div>
@@ -990,7 +992,7 @@ export default function SettingsPanel() {
         <div className="w-1/2 p-6 space-y-4 overflow-y-auto bg-[#131524]">
           <div className="mb-4">
             <h3 className="text-xl font-bold text-gray-100 flex items-center gap-2 mb-2">
-              <span>📝</span>
+              <FileCode size={20} strokeWidth={1.5} />
               <span>Полная конфигурация (JSON)</span>
             </h3>
             <p className="text-xs text-gray-400">Редактируйте при необходимости</p>

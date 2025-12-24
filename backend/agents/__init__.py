@@ -1,5 +1,5 @@
 """
-Agents for various tasks
+Agents for various tasks with reflection and inter-agent communication
 """
 
 from .base import BaseAgent, AgentRegistry
@@ -10,10 +10,23 @@ from .data_analysis import DataAnalysisAgent
 from .workflow import WorkflowAgent
 from .integration import IntegrationAgent
 from .monitoring import MonitoringAgent
+from .reflection_mixin import ReflectionMixin, ReflectionResult, ReflectionQuality
+from .communicator import (
+    AgentCommunicator,
+    AgentMessage,
+    AgentCapability,
+    MessageType,
+    MessagePriority,
+    DelegationResult,
+    get_communicator,
+    set_communicator
+)
 
 __all__ = [
+    # Base
     "BaseAgent",
     "AgentRegistry",
+    # Agents
     "CodeWriterAgent",
     "ReactAgent",
     "ResearchAgent",
@@ -21,5 +34,18 @@ __all__ = [
     "WorkflowAgent",
     "IntegrationAgent",
     "MonitoringAgent",
+    # Reflection
+    "ReflectionMixin",
+    "ReflectionResult",
+    "ReflectionQuality",
+    # Communication
+    "AgentCommunicator",
+    "AgentMessage",
+    "AgentCapability",
+    "MessageType",
+    "MessagePriority",
+    "DelegationResult",
+    "get_communicator",
+    "set_communicator",
 ]
 

@@ -3,6 +3,20 @@ import { persist } from 'zustand/middleware';
 
 export type ChatRole = 'user' | 'assistant';
 
+// Reflection data from agent self-correction
+export interface ReflectionData {
+  completeness: number;    // 0-100: How complete is the solution
+  correctness: number;     // 0-100: How correct is the solution
+  quality: number;         // 0-100: Code/text quality
+  overall_score: number;   // 0-100: Weighted overall score
+  quality_level: 'excellent' | 'good' | 'acceptable' | 'poor' | 'failed';
+  issues: string[];        // Identified issues
+  improvements: string[];  // Suggested improvements
+  should_retry: boolean;
+  retry_suggestion?: string;
+  timestamp?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
@@ -12,12 +26,16 @@ export interface ChatMessage {
   result?: any;
   subtasks?: Array<{ subtask: string; status: string; result?: any }>;
   thinking?: string; // Thinking/reasoning trace
+  reflection?: ReflectionData; // Agent reflection/self-correction data
   metadata?: {
     provider?: string;
     model?: string;
     thinking_mode?: boolean;
     thinking_native?: boolean;
     thinking_emulated?: boolean;
+    reflection_attempts?: number; // How many correction attempts were made
+    corrected?: boolean; // Was the result corrected
+    execution_time?: number; // Execution time in seconds
   };
 }
 

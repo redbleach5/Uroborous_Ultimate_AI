@@ -73,41 +73,73 @@ orchestrator:
     use_memory: true
     max_depth: 5
 agents:
+  # Global reflection settings (can be overridden per agent)
+  reflection:
+    enabled: true
+    max_retries: 2
+    min_quality_threshold: 60.0
+  
   code_writer:
     enabled: true
     default_model: null
     temperature: 0.7
     max_iterations: 10
+    reflection:
+      enabled: true
+      max_retries: 2
+      min_quality_threshold: 70.0  # Higher threshold for code
   react:
     enabled: true
     default_model: null
     temperature: 0.5
     max_iterations: 20
+    reflection:
+      enabled: true
+      max_retries: 2
+      min_quality_threshold: 60.0
   research:
     enabled: true
     default_model: null
     temperature: 0.3
     max_iterations: 15
+    reflection:
+      enabled: true
+      max_retries: 1  # Less retries for research
+      min_quality_threshold: 50.0
   data_analysis:
     enabled: true
     default_model: null
     temperature: 0.2
     max_iterations: 25
+    reflection:
+      enabled: true
+      max_retries: 2
+      min_quality_threshold: 65.0
   workflow:
     enabled: true
     default_model: null
     temperature: 0.3
     max_iterations: 10
+    reflection:
+      enabled: true
+      max_retries: 1
+      min_quality_threshold: 60.0
   integration:
     enabled: true
     default_model: null
     temperature: 0.4
     max_iterations: 10
+    reflection:
+      enabled: true
+      max_retries: 1
+      min_quality_threshold: 60.0
   monitoring:
     enabled: true
     default_model: null
     temperature: 0.2
     max_iterations: 10
+    reflection:
+      enabled: false  # Monitoring doesn't need reflection
 memory:
   enabled: true
   storage_path: memory/memories.db

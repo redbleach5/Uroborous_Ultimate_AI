@@ -1,5 +1,80 @@
 # 🧠 План улучшения системы агентов AILLM
 
+## ✅ Реализовано
+
+### 1. ReflectionMixin - Самокоррекция агентов
+
+**Файл:** `backend/agents/reflection_mixin.py`
+
+Добавляет агентам способность анализировать свои результаты и автоматически исправлять ошибки:
+
+```python
+# Использование (автоматически для всех агентов, наследующих BaseAgent)
+result = await agent.execute(task, context)
+# result теперь содержит:
+# - _reflection: оценка качества (completeness, correctness, quality)
+# - _reflection_attempts: количество попыток
+# - _corrected: True если результат был исправлен
+
+# Настройка рефлексии
+agent.configure_reflection(
+    enabled=True,
+    max_retries=2,
+    min_quality_threshold=70.0  # 0-100
+)
+
+# Отключение рефлексии для конкретного вызова
+result = await agent.execute(task, {"_skip_reflection": True})
+```
+
+### 2. AgentCommunicator - Межагентное взаимодействие
+
+**Файл:** `backend/agents/communicator.py`
+
+Позволяет агентам делегировать задачи друг другу:
+
+```python
+# Делегирование задачи другому агенту
+result = await agent.delegate_to(
+    agent_type="research",
+    subtask="Найди документацию по FastAPI",
+    context={"project": "my_api"}
+)
+
+# Запрос помощи по возможности
+result = await agent.request_help(
+    capability="code_generation",  # или data_analysis, web_search и т.д.
+    task="Напиши функцию валидации",
+    context={}
+)
+
+# Широковещательное сообщение всем агентам
+result = await agent.broadcast_message({
+    "event": "project_updated",
+    "data": {"files": ["main.py"]}
+})
+```
+
+### Конфигурация
+
+В `config.yaml`:
+```yaml
+agents:
+  reflection:
+    enabled: true
+    max_retries: 2
+    min_quality_threshold: 60.0
+  
+  code_writer:
+    # ... 
+    reflection:
+      enabled: true
+      max_retries: 2
+      min_quality_threshold: 70.0  # Выше для кода
+```
+
+---
+
 ## 📊 Текущее состояние
 
 ### Существующие агенты (7 штук):

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { executeTask } from '../api/client';
 import SettingsPanel from './SettingsPanel';
 import { useChatStore } from '../state/chatStore';
+import { Bot, Settings, Menu, User, Gamepad2, Cloud, Code, Zap, Loader2 } from 'lucide-react';
 
 export function ManusStyleLayout() {
   const [input, setInput] = useState('');
@@ -207,7 +208,7 @@ export function ManusStyleLayout() {
           <div className="flex items-center gap-4">
             {!sidebarOpen && (
               <button onClick={() => setSidebarOpen(true)} className="text-gray-400 hover:text-white">
-                ☰
+                <Menu size={20} strokeWidth={1.5} />
               </button>
             )}
             <div>
@@ -218,12 +219,13 @@ export function ManusStyleLayout() {
           <div className="flex items-center gap-4">
             <button
               onClick={() => setShowSettings(!showSettings)}
-              className={`px-4 py-2 rounded-md transition-colors ${
+              className={`px-4 py-2 rounded-md transition-colors flex items-center gap-2 ${
                 showSettings ? 'bg-blue-600 text-white' : 'bg-[#1f2236] text-gray-300 hover:bg-[#2a2f46]'
               }`}
               title="Настройки"
             >
-              ⚙️ Настройки
+              <Settings size={16} strokeWidth={1.5} />
+              <span>Настройки</span>
             </button>
             {!showSettings && <div className="text-sm text-gray-400">Автономные интеллектуальные LLM агенты</div>}
           </div>
@@ -238,24 +240,24 @@ export function ManusStyleLayout() {
               <div className="max-w-4xl mx-auto space-y-6">
                 {messages.length === 0 ? (
                   <div className="text-center mt-20">
-                    <div className="text-6xl mb-4">🤖</div>
+                    <Bot size={64} strokeWidth={1} className="mx-auto mb-4 text-blue-400" />
                     <h2 className="text-2xl font-semibold mb-2">Добро пожаловать в AILLM</h2>
                     <p className="text-gray-400 mb-6">Я могу помочь вам с задачами любой сложности</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-2xl mx-auto text-left">
                       <div className="p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
-                        <div className="font-semibold mb-1">🎮 Простые задачи</div>
+                        <div className="font-semibold mb-1 flex items-center gap-2"><Gamepad2 size={16} strokeWidth={1.5} className="text-green-400" /> Простые задачи</div>
                         <div className="text-sm text-gray-400">Сгенерировать игру змейка</div>
                       </div>
                       <div className="p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
-                        <div className="font-semibold mb-1">☁️ Сложные проекты</div>
+                        <div className="font-semibold mb-1 flex items-center gap-2"><Cloud size={16} strokeWidth={1.5} className="text-blue-400" /> Сложные проекты</div>
                         <div className="text-sm text-gray-400">Создать облачное хранилище</div>
                       </div>
                       <div className="p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
-                        <div className="font-semibold mb-1">💻 Разработка</div>
+                        <div className="font-semibold mb-1 flex items-center gap-2"><Code size={16} strokeWidth={1.5} className="text-purple-400" /> Разработка</div>
                         <div className="text-sm text-gray-400">Разработать IDE с нуля</div>
                       </div>
                       <div className="p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
-                        <div className="font-semibold mb-1">⚡ Оптимизация</div>
+                        <div className="font-semibold mb-1 flex items-center gap-2"><Zap size={16} strokeWidth={1.5} className="text-yellow-400" /> Оптимизация</div>
                         <div className="text-sm text-gray-400">Модуль для оптимизации LLM</div>
                       </div>
                     </div>
@@ -361,7 +363,7 @@ export function ManusStyleLayout() {
                       </div>
                       {message.role === 'user' && (
                         <div className="w-8 h-8 rounded-full bg-[#2a2a2a] flex items-center justify-center flex-shrink-0">
-                          <span className="text-sm">👤</span>
+                          <User size={16} strokeWidth={1.5} className="text-gray-400" />
                         </div>
                       )}
                     </div>
@@ -401,7 +403,7 @@ export function ManusStyleLayout() {
                 >
                   {isLoading ? (
                     <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <Loader2 size={16} strokeWidth={1.5} className="animate-spin" />
                       <span>Выполняется</span>
                     </div>
                   ) : (

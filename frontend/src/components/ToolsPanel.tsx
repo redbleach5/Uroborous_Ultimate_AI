@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { listTools, executeTool } from '../api/client';
+import { Wrench, FileText, CircleX, Zap, ClipboardList, Clock, Loader2 } from 'lucide-react';
 
 export function ToolsPanel() {
   const [selectedTool, setSelectedTool] = useState<string>('');
@@ -35,7 +36,7 @@ export function ToolsPanel() {
   return (
     <div className="flex flex-col h-full p-6 max-w-6xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
-        <span className="text-3xl">🔧</span>
+        <Wrench size={32} strokeWidth={1.5} className="text-blue-400" />
         <h2 className="text-3xl font-bold text-gray-100">Инструменты</h2>
       </div>
 
@@ -59,7 +60,7 @@ export function ToolsPanel() {
       {selectedTool && (
         <div className="mb-6 bg-gradient-to-br from-[#1a1d2e] to-[#0f111b] p-6 rounded-xl border border-[#2a2f46] shadow-lg">
           <label className="block text-sm font-semibold mb-3 text-gray-100 flex items-center gap-2">
-            <span>📝</span>
+            <FileText size={16} strokeWidth={1.5} />
             <span>Входные данные инструмента (JSON)</span>
           </label>
           <textarea
@@ -73,13 +74,13 @@ export function ToolsPanel() {
           />
           {error && (
             <div className="mt-3 px-4 py-3 bg-red-900/30 border-2 border-red-500/60 rounded-xl text-red-300 text-sm flex items-start gap-2">
-              <span className="text-lg flex-shrink-0">❌</span>
+              <CircleX size={18} strokeWidth={1.5} className="flex-shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
           {executeMutation.isError && (
             <div className="mt-3 px-4 py-3 bg-red-900/30 border-2 border-red-500/60 rounded-xl text-red-300 text-sm flex items-start gap-2">
-              <span className="text-lg flex-shrink-0">❌</span>
+              <CircleX size={18} strokeWidth={1.5} className="flex-shrink-0 mt-0.5" />
               <span>Ошибка выполнения: {executeMutation.error instanceof Error ? executeMutation.error.message : String(executeMutation.error)}</span>
             </div>
           )}
@@ -90,12 +91,12 @@ export function ToolsPanel() {
           >
             {executeMutation.isPending ? (
               <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <Loader2 size={16} strokeWidth={1.5} className="animate-spin" />
                 <span>Выполнение...</span>
               </>
             ) : (
               <>
-                <span>⚡</span>
+                <Zap size={16} strokeWidth={1.5} />
                 <span>Выполнить инструмент</span>
               </>
             )}
@@ -105,7 +106,7 @@ export function ToolsPanel() {
 
       <div className="flex-1 overflow-y-auto">
         <h3 className="text-lg font-semibold mb-4 text-gray-100 flex items-center gap-2">
-          <span>📋</span>
+          <ClipboardList size={18} strokeWidth={1.5} />
           <span>Результаты</span>
         </h3>
         {results.length === 0 ? (
@@ -117,7 +118,7 @@ export function ToolsPanel() {
             {results.map((item, idx) => (
               <div key={idx} className="p-5 bg-gradient-to-br from-[#1a1d2e] to-[#0f111b] rounded-xl border border-[#2a2f46] shadow-lg hover:border-[#3a3f56] transition-all duration-200">
                 <div className="text-sm text-gray-300 mb-3 flex items-center gap-2 font-medium">
-                  <span>🕐</span>
+                  <Clock size={14} strokeWidth={1.5} />
                   <span>{item.timestamp.toLocaleString('ru-RU')}</span>
                   <span className="text-gray-500">|</span>
                   <span className="text-blue-400">{item.tool}</span>

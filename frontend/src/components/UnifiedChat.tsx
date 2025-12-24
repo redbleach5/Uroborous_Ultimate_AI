@@ -2,6 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { executeTask, processBatchTasks, executeTool } from '../api/client';
 import { useChatStore, ChatMode } from '../state/chatStore';
 import { useExecutionInfo } from '../state/executionContext';
+import { LearningProgress } from './LearningProgress';
+import {
+  MessageSquare, Bot, Brain, Zap, Send, Loader2, User, CircleCheck, CircleX,
+  BarChart3, Lightbulb, AlertTriangle, ChevronDown, ChevronRight, ChevronLeft, Copy, 
+  Play, Trash2, Plus, Settings, RefreshCw, Pencil, Code, FileText, Globe, Search,
+  Clock, type LucideIcon
+} from 'lucide-react';
 
 // Helper function to extract code from markdown blocks
 const extractCodeFromMarkdown = (text: string): string | null => {
@@ -537,11 +544,11 @@ const AGENTS = [
   { id: 'monitoring', name: 'Мониторинг', description: 'Мониторинг производительности системы' },
 ];
 
-const MODE_INFO: Record<ChatMode, { name: string; description: string; icon: string }> = {
-  chat: { name: 'Чат', description: 'Обычный режим общения', icon: '💬' },
-  task: { name: 'Задачи', description: 'Выполнение сложных задач', icon: '📋' },
-  agent: { name: 'Агенты', description: 'Работа с конкретным агентом', icon: '🤖' },
-  batch: { name: 'Пакетная обработка', description: 'Обработка нескольких задач', icon: '⚡' },
+const MODE_INFO: Record<ChatMode, { name: string; description: string; icon: LucideIcon }> = {
+  chat: { name: 'Чат', description: 'Обычный режим общения', icon: MessageSquare },
+  task: { name: 'Задачи', description: 'Выполнение сложных задач', icon: Zap },
+  agent: { name: 'Агенты', description: 'Работа с конкретным агентом', icon: Bot },
+  batch: { name: 'Пакетная обработка', description: 'Обработка нескольких задач', icon: RefreshCw },
 };
 
 export function UnifiedChat() {
@@ -800,6 +807,22 @@ export function UnifiedChat() {
           }
         }
         
+        // Извлекаем данные рефлексии (self-correction)
+        let reflection: any = null;
+        if (response.result?._reflection) {
+          reflection = response.result._reflection;
+          // Добавляем информацию о рефлексии в metadata
+          metadata.reflection_attempts = response.result._reflection_attempts || 1;
+          metadata.corrected = response.result._corrected || false;
+          metadata.execution_time = response.result._execution_time;
+        } else if (response.result?.result?._reflection) {
+          // Вложенная структура
+          reflection = response.result.result._reflection;
+          metadata.reflection_attempts = response.result.result._reflection_attempts || 1;
+          metadata.corrected = response.result.result._corrected || false;
+          metadata.execution_time = response.result.result._execution_time;
+        }
+        
         // Форматируем ответ в зависимости от типа результата
         // Проверяем response.success явно (до блока try, чтобы была доступна везде)
         const isSuccess = response && response.success === true;
@@ -852,6 +875,7 @@ export function UnifiedChat() {
           status: messageStatus,
           result: response.result,
           thinking: thinking,
+          reflection: reflection || undefined,
           metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
           subtasks:
             response.subtasks?.map((st: string) => ({
@@ -1200,7 +1224,7 @@ export function UnifiedChat() {
         <div className="p-3 border-b border-[#1f2236] bg-gradient-to-r from-[#131524] to-[#1a1d2e]">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-base font-bold text-gray-100 flex items-center gap-1.5">
-              <span>💬</span>
+              <MessageSquare size={16} strokeWidth={1.5} className="text-blue-400" />
               <span>Чаты</span>
             </h2>
             <button
@@ -1216,14 +1240,14 @@ export function UnifiedChat() {
               onClick={() => setSidebarOpen(false)} 
               className="text-gray-400 hover:text-white transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[#1f2236] text-[10px]"
             >
-              <span>←</span>
+              <ChevronLeft size={10} strokeWidth={2} />
               <span>Скрыть</span>
             </button>
             <button 
               onClick={clearHistory} 
               className="text-gray-400 hover:text-red-400 transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[#1f2236] text-[10px]"
             >
-              <span>🗑️</span>
+              <Trash2 size={10} strokeWidth={1.5} />
               <span>Очистить</span>
             </button>
           </div>
@@ -1252,7 +1276,7 @@ export function UnifiedChat() {
                       className="text-[10px] text-gray-400 hover:text-blue-400 p-1 rounded hover:bg-[#1f2236] transition-colors"
                       title="Переименовать"
                     >
-                      ✎
+                      <Pencil size={10} strokeWidth={1.5} />
                     </button>
                     <button
                       onClick={(e) => {
@@ -1262,16 +1286,19 @@ export function UnifiedChat() {
                       className="text-[10px] text-gray-400 hover:text-red-400 p-1 rounded hover:bg-[#1f2236] transition-colors"
                       title="Удалить"
                     >
-                      🗑️
+                      <Trash2 size={10} strokeWidth={1.5} />
                     </button>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 mb-1">
-                  {conv.mode && (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#1f2236]/80 border border-[#2a2f46] text-gray-300 font-medium">
-                      {MODE_INFO[conv.mode].icon} {MODE_INFO[conv.mode].name}
-                    </span>
-                  )}
+                  {conv.mode && (() => {
+                    const ModeIcon = MODE_INFO[conv.mode].icon;
+                    return (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#1f2236]/80 border border-[#2a2f46] text-gray-300 font-medium flex items-center gap-1">
+                        <ModeIcon size={10} strokeWidth={1.5} /> {MODE_INFO[conv.mode].name}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <div className="text-[10px] text-gray-500 mb-1">{new Date(conv.updatedAt).toLocaleString('ru-RU', { 
                   day: '2-digit', 
@@ -1285,6 +1312,11 @@ export function UnifiedChat() {
               </div>
             ))}
         </div>
+        
+        {/* Learning Progress */}
+        <div className="p-2 border-t border-[#1f2236]">
+          <LearningProgress />
+        </div>
       </div>
 
       {/* Main Content */}
@@ -1293,9 +1325,13 @@ export function UnifiedChat() {
         <div className="flex-1 overflow-y-auto">
           <div className="px-6 py-4">
               <div className="max-w-4xl mx-auto space-y-4">
-                {messages.length === 0 ? (
+                {messages.length === 0 ? (() => {
+                  const WelcomeIcon = MODE_INFO[currentMode].icon;
+                  return (
                   <div className="text-center mt-12 animate-fade-in">
-                    <div className="text-5xl mb-4 animate-bounce-slow">{MODE_INFO[currentMode].icon}</div>
+                    <div className="mb-4 animate-bounce-slow flex justify-center">
+                      <WelcomeIcon size={48} strokeWidth={1} className="text-blue-400" />
+                    </div>
                     <h2 className="text-2xl font-bold mb-2 text-gray-100">Добро пожаловать в {MODE_INFO[currentMode].name}</h2>
                     <p className="text-gray-400 mb-6 text-sm">{MODE_INFO[currentMode].description}</p>
                     {currentMode === 'chat' && (
@@ -1316,14 +1352,14 @@ export function UnifiedChat() {
                         </div>
                         <div className="p-3 bg-gradient-to-br from-[#1a1d2e] to-[#0f111b] rounded-lg border border-[#2a2f46] hover:border-[#3a3f56] transition-all duration-200 cursor-pointer group">
                           <div className="font-semibold mb-1 text-gray-100 flex items-center gap-1.5 text-sm">
-                            <span>💻</span>
+                            <Code size={14} strokeWidth={1.5} className="text-purple-400" />
                             <span>Разработка</span>
                           </div>
                           <div className="text-xs text-gray-400 group-hover:text-gray-300 transition-colors">IDE</div>
                         </div>
                         <div className="p-3 bg-gradient-to-br from-[#1a1d2e] to-[#0f111b] rounded-lg border border-[#2a2f46] hover:border-[#3a3f56] transition-all duration-200 cursor-pointer group">
                           <div className="font-semibold mb-1 text-gray-100 flex items-center gap-1.5 text-sm">
-                            <span>⚡</span>
+                            <Zap size={14} strokeWidth={1.5} className="text-yellow-400" />
                             <span>Оптимизация</span>
                           </div>
                           <div className="text-xs text-gray-400 group-hover:text-gray-300 transition-colors">LLM модуль</div>
@@ -1334,7 +1370,7 @@ export function UnifiedChat() {
                       <div className="max-w-2xl mx-auto text-left">
                         <div className="p-4 bg-gradient-to-br from-[#1a1d2e] to-[#0f111b] rounded-lg border border-[#2a2f46]">
                           <div className="font-semibold mb-2 text-gray-100 flex items-center gap-2 text-sm">
-                            <span>📋</span>
+                            <FileText size={14} strokeWidth={1.5} className="text-gray-400" />
                             <span>Пример:</span>
                           </div>
                           <pre className="text-xs text-gray-400 whitespace-pre-wrap font-mono bg-[#0f111b] p-3 rounded border border-[#1f2236]">
@@ -1345,7 +1381,8 @@ export function UnifiedChat() {
                       </div>
                     )}
                   </div>
-                ) : (
+                  );
+                })() : (
                   messages.map((message, index) => (
                     <div
                       key={message.id}
@@ -1386,7 +1423,7 @@ export function UnifiedChat() {
                                 {message.subtasks && message.subtasks.length > 0 && (
                                   <div className="text-sm mb-3">
                                     <div className="text-gray-300 mb-3 font-medium flex items-center gap-2">
-                                      <span>✅</span>
+                                      <CircleCheck size={14} strokeWidth={1.5} className="text-green-400" />
                                       <span>Выполненные шаги</span>
                                     </div>
                                     <div className="space-y-2">
@@ -1409,7 +1446,7 @@ export function UnifiedChat() {
                                     <div className="mt-3">
                                       <div className="flex items-center justify-between mb-3">
                                         <span className="text-sm font-semibold text-gray-200 flex items-center gap-2">
-                                          <span>💻</span>
+                                          <Code size={14} strokeWidth={1.5} className="text-blue-400" />
                                           <span>Сгенерированный код</span>
                                         </span>
                                         <div className="flex items-center gap-2">
@@ -1425,7 +1462,7 @@ export function UnifiedChat() {
                                               </>
                                             ) : (
                                               <>
-                                                <span>▶️</span>
+                                                <Play size={12} strokeWidth={1.5} />
                                                 <span>Запустить</span>
                                               </>
                                             )}
@@ -1453,7 +1490,7 @@ export function UnifiedChat() {
                                             <div className="bg-[#0f111b] border border-[#2a2f46] rounded-lg overflow-hidden">
                                               <div className="p-3 bg-[#1a1d2e] border-b border-[#2a2f46] flex items-center justify-between">
                                                 <span className="text-sm font-semibold text-gray-200 flex items-center gap-2">
-                                                  <span>🌐</span>
+                                                  <Globe size={14} strokeWidth={1.5} className="text-cyan-400" />
                                                   <span>Предпросмотр HTML</span>
                                                 </span>
                                                 <button
@@ -1478,7 +1515,7 @@ export function UnifiedChat() {
                                           {codeExecutionResults[message.id].result && (
                                             <div className="bg-[#0f111b] border border-[#2a2f46] rounded-lg p-4">
                                               <div className="text-sm font-semibold text-gray-200 mb-2 flex items-center gap-2">
-                                                <span>📊</span>
+                                                <BarChart3 size={14} strokeWidth={1.5} className="text-blue-400" />
                                                 <span>Результат выполнения</span>
                                               </div>
                                               <pre className="bg-[#0a0a0f] p-4 rounded-lg overflow-x-auto text-xs font-mono text-gray-300 whitespace-pre-wrap border border-[#1a1d2e]">
@@ -1498,7 +1535,7 @@ export function UnifiedChat() {
                                     <div className="flex items-center justify-between mb-3">
                                       <div className="flex items-center gap-2">
                                         <span className="text-sm font-semibold text-purple-300 flex items-center gap-2">
-                                          <span className="text-lg">🧠</span>
+                                          <Brain size={18} strokeWidth={1.5} />
                                           <span>Reasoning Process</span>
                                         </span>
                                       </div>
@@ -1509,6 +1546,143 @@ export function UnifiedChat() {
                                   </div>
                                 )}
 
+                                {/* Reflection - Self-correction data */}
+                                {message.reflection && (
+                                  <div className="mb-4 p-4 bg-gradient-to-br from-emerald-900/30 to-teal-800/20 border border-emerald-500/40 rounded-xl shadow-lg">
+                                    <div className="flex items-center justify-between mb-3">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-sm font-semibold text-emerald-300 flex items-center gap-2">
+                                          <Search size={18} strokeWidth={1.5} />
+                                          <span>Quality Analysis</span>
+                                        </span>
+                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                          message.reflection.quality_level === 'excellent' ? 'bg-green-500/30 text-green-300 border border-green-500/40' :
+                                          message.reflection.quality_level === 'good' ? 'bg-blue-500/30 text-blue-300 border border-blue-500/40' :
+                                          message.reflection.quality_level === 'acceptable' ? 'bg-yellow-500/30 text-yellow-300 border border-yellow-500/40' :
+                                          'bg-red-500/30 text-red-300 border border-red-500/40'
+                                        }`}>
+                                          {message.reflection.quality_level === 'excellent' ? 'Отлично' :
+                                           message.reflection.quality_level === 'good' ? 'Хорошо' :
+                                           message.reflection.quality_level === 'acceptable' ? 'Приемлемо' :
+                                           message.reflection.quality_level === 'poor' ? 'Слабо' : 'Неудача'}
+                                        </span>
+                                      </div>
+                                      {message.metadata?.corrected && (
+                                        <span className="px-2 py-0.5 bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-full text-xs font-medium flex items-center gap-1">
+                                          <RefreshCw size={10} strokeWidth={1.5} />
+                                          <span>Исправлено</span>
+                                        </span>
+                                      )}
+                                    </div>
+                                    
+                                    {/* Score bars */}
+                                    <div className="grid grid-cols-3 gap-3 mb-3">
+                                      <div className="bg-[#0f111b]/40 p-2 rounded-lg border border-emerald-500/20">
+                                        <div className="text-[10px] text-emerald-400/70 uppercase tracking-wide mb-1">Полнота</div>
+                                        <div className="flex items-center gap-2">
+                                          <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                                            <div 
+                                              className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500"
+                                              style={{ width: `${message.reflection.completeness}%` }}
+                                            />
+                                          </div>
+                                          <span className="text-xs font-mono text-emerald-300">{Math.round(message.reflection.completeness)}%</span>
+                                        </div>
+                                      </div>
+                                      <div className="bg-[#0f111b]/40 p-2 rounded-lg border border-emerald-500/20">
+                                        <div className="text-[10px] text-emerald-400/70 uppercase tracking-wide mb-1">Корректность</div>
+                                        <div className="flex items-center gap-2">
+                                          <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                                            <div 
+                                              className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full transition-all duration-500"
+                                              style={{ width: `${message.reflection.correctness}%` }}
+                                            />
+                                          </div>
+                                          <span className="text-xs font-mono text-blue-300">{Math.round(message.reflection.correctness)}%</span>
+                                        </div>
+                                      </div>
+                                      <div className="bg-[#0f111b]/40 p-2 rounded-lg border border-emerald-500/20">
+                                        <div className="text-[10px] text-emerald-400/70 uppercase tracking-wide mb-1">Качество</div>
+                                        <div className="flex items-center gap-2">
+                                          <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                                            <div 
+                                              className="h-full bg-gradient-to-r from-purple-500 to-purple-400 rounded-full transition-all duration-500"
+                                              style={{ width: `${message.reflection.quality}%` }}
+                                            />
+                                          </div>
+                                          <span className="text-xs font-mono text-purple-300">{Math.round(message.reflection.quality)}%</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    {/* Overall score */}
+                                    <div className="flex items-center justify-between mb-3 p-2 bg-[#0f111b]/60 rounded-lg border border-emerald-500/20">
+                                      <span className="text-xs text-emerald-400/80">Общая оценка</span>
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-24 h-2 bg-gray-700 rounded-full overflow-hidden">
+                                          <div 
+                                            className={`h-full rounded-full transition-all duration-500 ${
+                                              message.reflection.overall_score >= 90 ? 'bg-gradient-to-r from-green-500 to-emerald-400' :
+                                              message.reflection.overall_score >= 70 ? 'bg-gradient-to-r from-blue-500 to-cyan-400' :
+                                              message.reflection.overall_score >= 50 ? 'bg-gradient-to-r from-yellow-500 to-amber-400' :
+                                              'bg-gradient-to-r from-red-500 to-orange-400'
+                                            }`}
+                                            style={{ width: `${message.reflection.overall_score}%` }}
+                                          />
+                                        </div>
+                                        <span className={`text-sm font-bold ${
+                                          message.reflection.overall_score >= 90 ? 'text-green-400' :
+                                          message.reflection.overall_score >= 70 ? 'text-blue-400' :
+                                          message.reflection.overall_score >= 50 ? 'text-yellow-400' : 'text-red-400'
+                                        }`}>
+                                          {Math.round(message.reflection.overall_score)}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    
+                                    {/* Issues and improvements */}
+                                    {(message.reflection.issues?.length > 0 || message.reflection.improvements?.length > 0) && (
+                                      <div className="grid grid-cols-2 gap-3 text-xs">
+                                        {message.reflection.issues?.length > 0 && (
+                                          <div className="bg-red-900/20 p-2 rounded-lg border border-red-500/20">
+                                            <div className="text-red-400 font-medium mb-1 flex items-center gap-1">
+                                              <AlertTriangle size={12} strokeWidth={1.5} /> Замечания
+                                            </div>
+                                            <ul className="text-red-300/80 space-y-0.5">
+                                              {message.reflection.issues.slice(0, 3).map((issue, i) => (
+                                                <li key={i} className="truncate">• {issue}</li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                        )}
+                                        {message.reflection.improvements?.length > 0 && (
+                                          <div className="bg-emerald-900/20 p-2 rounded-lg border border-emerald-500/20">
+                                            <div className="text-emerald-400 font-medium mb-1 flex items-center gap-1">
+                                              <Lightbulb size={12} strokeWidth={1.5} /> Улучшения
+                                            </div>
+                                            <ul className="text-emerald-300/80 space-y-0.5">
+                                              {message.reflection.improvements.slice(0, 3).map((imp, i) => (
+                                                <li key={i} className="truncate">• {imp}</li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                    
+                                    {/* Reflection attempts info */}
+                                    {message.metadata?.reflection_attempts && message.metadata.reflection_attempts > 1 && (
+                                      <div className="mt-2 text-[10px] text-emerald-400/60 flex items-center gap-1">
+                                        <RefreshCw size={10} strokeWidth={1.5} />
+                                        <span>Попыток: {message.metadata.reflection_attempts}</span>
+                                        {message.metadata.execution_time && (
+                                          <span className="ml-2 flex items-center gap-1"><Clock size={10} strokeWidth={1.5} /> {message.metadata.execution_time.toFixed(1)}с</span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
                                 {/* Provider and model info */}
                                 {message.metadata && (message.metadata.provider || message.metadata.model) && (
                                   <div className="mb-3 -mt-1 flex items-center gap-2 flex-wrap">
@@ -1516,7 +1690,7 @@ export function UnifiedChat() {
                                       <span className="px-2.5 py-1 bg-[#0f111b]/60 backdrop-blur-sm border border-[#2a2f46] rounded-lg text-xs font-medium text-gray-300 flex items-center gap-1.5">
                                         {message.metadata.provider === 'ollama' ? (
                                           <>
-                                            <span>🦙</span>
+                                            <Bot size={12} strokeWidth={1.5} />
                                             <span>Ollama</span>
                                           </>
                                         ) : (
@@ -1531,7 +1705,7 @@ export function UnifiedChat() {
                                     )}
                                     {message.metadata.thinking_mode && (
                                       <span className="px-2.5 py-1 bg-purple-900/40 border border-purple-500/30 rounded-lg text-xs font-medium text-purple-300 flex items-center gap-1.5">
-                                        <span>🧠</span>
+                                        <Brain size={12} strokeWidth={1.5} />
                                         <span>Thinking Mode</span>
                                       </span>
                                     )}
@@ -1543,7 +1717,7 @@ export function UnifiedChat() {
                                     )}
                                     {message.metadata.thinking_emulated && (
                                       <span className="px-2.5 py-1 bg-yellow-900/40 border border-yellow-500/30 rounded-lg text-xs font-medium text-yellow-300 flex items-center gap-1.5">
-                                        <span>⚡</span>
+                                        <Zap size={12} strokeWidth={1.5} />
                                         <span>Emulated</span>
                                       </span>
                                     )}
@@ -1562,7 +1736,7 @@ export function UnifiedChat() {
                                 {message.result?.files && Array.isArray(message.result.files) && message.result.files.length > 0 && (
                                   <div className="mt-3">
                                     <div className="text-sm font-semibold mb-3 text-gray-200 flex items-center gap-2">
-                                      <span>📁</span>
+                                      <FileText size={14} strokeWidth={1.5} className="text-gray-400" />
                                       <span>Созданные файлы</span>
                                     </div>
                                     <div className="space-y-2">
@@ -1590,7 +1764,7 @@ export function UnifiedChat() {
                             )}
                             {message.status === 'error' && (
                               <div className="text-red-300 leading-relaxed flex items-start gap-2">
-                                <span className="text-lg flex-shrink-0">❌</span>
+                                <CircleX size={18} strokeWidth={1.5} className="flex-shrink-0 mt-0.5" />
                                 <div className="flex-1">{message.content}</div>
                               </div>
                             )}
@@ -1613,7 +1787,9 @@ export function UnifiedChat() {
         {/* Input Area */}
         <div className="border-t border-[#1f2236] bg-gradient-to-r from-[#131524] to-[#1a1d2e] px-4 py-3 shadow-2xl">
             <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
-              {currentMode === 'batch' ? (
+              {currentMode === 'batch' ? (() => {
+                const BatchModeIcon = MODE_INFO[currentMode].icon;
+                return (
                 <div className="relative">
                   {/* Объединенная область ввода */}
                   <div className="relative flex items-center bg-[#0f111b] border-2 border-[#1f2236] rounded-lg focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all duration-200">
@@ -1625,13 +1801,15 @@ export function UnifiedChat() {
                         className="px-3 py-2.5 h-full bg-transparent hover:bg-[#1f2236] transition-colors flex items-center gap-1.5 text-xs font-medium text-gray-300 border-r border-[#1f2236]"
                         title={MODE_INFO[currentMode].description}
                       >
-                        <span>{MODE_INFO[currentMode].icon}</span>
+                        <BatchModeIcon size={14} strokeWidth={1.5} />
                         <span className="hidden sm:inline">{MODE_INFO[currentMode].name}</span>
-                        <span className="text-[10px]">▼</span>
+                        <ChevronDown size={10} strokeWidth={1.5} />
                       </button>
                       {modeDropdownOpen && (
                         <div className="absolute bottom-full left-0 mb-2 w-48 bg-[#1a1d2e] border border-[#2a2f46] rounded-lg shadow-xl z-20 overflow-hidden">
-                          {Object.entries(MODE_INFO).map(([mode, info]) => (
+                          {Object.entries(MODE_INFO).map(([mode, info]) => {
+                            const DropdownIcon = info.icon;
+                            return (
                             <button
                               key={mode}
                               type="button"
@@ -1645,11 +1823,12 @@ export function UnifiedChat() {
                                   : 'text-gray-300 hover:bg-[#1f2236]'
                               }`}
                             >
-                              <span>{info.icon}</span>
+                              <DropdownIcon size={14} strokeWidth={1.5} />
                               <span className="flex-1">{info.name}</span>
-                              {currentMode === mode && <span className="text-blue-400">✓</span>}
+                              {currentMode === mode && <CircleCheck size={12} strokeWidth={1.5} className="text-blue-400" />}
                             </button>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -1691,7 +1870,10 @@ export function UnifiedChat() {
                     </button>
                   </div>
                 </div>
-              ) : (
+                );
+              })() : (() => {
+                const NormalModeIcon = MODE_INFO[currentMode].icon;
+                return (
                 <div className="relative">
                   {/* Объединенная область ввода */}
                   <div className="relative flex items-center bg-[#0f111b] border-2 border-[#1f2236] rounded-lg focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all duration-200">
@@ -1703,13 +1885,15 @@ export function UnifiedChat() {
                         className="px-3 py-2.5 h-full bg-transparent hover:bg-[#1f2236] transition-colors flex items-center gap-1.5 text-xs font-medium text-gray-300 border-r border-[#1f2236]"
                         title={MODE_INFO[currentMode].description}
                       >
-                        <span>{MODE_INFO[currentMode].icon}</span>
+                        <NormalModeIcon size={14} strokeWidth={1.5} />
                         <span className="hidden sm:inline">{MODE_INFO[currentMode].name}</span>
-                        <span className="text-[10px]">▼</span>
+                        <ChevronDown size={10} strokeWidth={1.5} />
                       </button>
                       {modeDropdownOpen && (
                         <div className="absolute bottom-full left-0 mb-2 w-48 bg-[#1a1d2e] border border-[#2a2f46] rounded-lg shadow-xl z-20 overflow-hidden">
-                          {Object.entries(MODE_INFO).map(([mode, info]) => (
+                          {Object.entries(MODE_INFO).map(([mode, info]) => {
+                            const ModeOptionIcon = info.icon;
+                            return (
                             <button
                               key={mode}
                               type="button"
@@ -1723,11 +1907,12 @@ export function UnifiedChat() {
                                   : 'text-gray-300 hover:bg-[#1f2236]'
                               }`}
                             >
-                              <span>{info.icon}</span>
+                              <ModeOptionIcon size={14} strokeWidth={1.5} />
                               <span className="flex-1">{info.name}</span>
-                              {currentMode === mode && <span className="text-blue-400">✓</span>}
+                              {currentMode === mode && <CircleCheck size={12} strokeWidth={1.5} className="text-blue-400" />}
                             </button>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -1741,7 +1926,7 @@ export function UnifiedChat() {
                           className="px-3 py-2.5 h-full bg-transparent hover:bg-[#1f2236] transition-colors flex items-center gap-1.5 text-xs font-medium text-gray-300 border-r border-[#1f2236]"
                           title="Выбрать агента"
                         >
-                          <span>🤖</span>
+                          <Bot size={14} strokeWidth={1.5} />
                           <span className="hidden sm:inline max-w-[80px] truncate">
                             {selectedAgent ? AGENTS.find(a => a.id === selectedAgent)?.name : 'Агент'}
                           </span>
@@ -1815,7 +2000,8 @@ export function UnifiedChat() {
                     </button>
                   </div>
                 </div>
-              )}
+                );
+              })()}
             </form>
           </div>
       </div>
