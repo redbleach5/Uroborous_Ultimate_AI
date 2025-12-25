@@ -184,44 +184,86 @@ async def chat(request: Request, chat_request: ChatRequest):
             except Exception as e:
                 logger.warning(f"Chat web search failed: {e}")
         
-        # Умный выбор модели на основе сложности сообщения
+        # ======= РАСПРЕДЕЛЁННЫЙ УМНЫЙ ВЫБОР МОДЕЛИ =======
+        # Учитывает все сервера (localhost + remote) и выбирает лучший
         model_to_use = chat_request.model
         provider_to_use = chat_request.provider
+        server_url_to_use = None  # URL сервера где есть модель
+        used_distributed = False
         
-        # Если модель НЕ указана явно, выбираем автоматически
-        if not model_to_use and complexity_info:
-            ollama_provider = llm_manager.providers.get("ollama")
-            if ollama_provider:
-                # Для простых сообщений используем быструю модель
-                if complexity_info.level.value in ["trivial", "simple"]:
-                    # Ищем быструю модель из рекомендованных
-                    fast_models = ollama_provider.recommended_models.get("fast", [])
-                    available = getattr(ollama_provider, '_available_models', [])
+        # Если модель НЕ указана явно, выбираем автоматически с учётом всех серверов
+        if not model_to_use:
+            try:
+                from backend.core.resource_aware_selector import ResourceAwareSelector
+                
+                # Получаем селектор из engine или создаём
+                resource_selector = getattr(engine, 'resource_aware_selector', None)
+                if not resource_selector:
+                    config = getattr(engine, 'raw_config', {})
+                    resource_selector = ResourceAwareSelector(llm_manager, config)
+                
+                # Определяем тип задачи для чата
+                task_type = "chat" if chat_request.mode == "general" else chat_request.mode
+                complexity_level = complexity_info.level.value if complexity_info else "simple"
+                quality = "fast" if complexity_level in ["trivial", "simple"] else "balanced"
+                
+                # Распределённый выбор: ищет модель на ВСЕХ доступных серверах
+                selection = await resource_selector.select_adaptive_model(
+                    task=chat_request.message,
+                    task_type=task_type,
+                    complexity=complexity_level,
+                    quality_requirement=quality,
+                    preferred_model=chat_request.model
+                )
+                
+                model_to_use = selection.model
+                used_distributed = selection.used_distributed_routing
+                
+                # Если распределённый роутинг нашёл модель на другом сервере
+                if selection.server_url:
+                    server_url_to_use = selection.server_url
+                    logger.info(
+                        f"Chat: Distributed routing -> {model_to_use} @ {selection.server_name or selection.server_url}"
+                    )
+                else:
+                    logger.info(f"Chat: Local selection -> {model_to_use}")
                     
-                    for fast_model in fast_models:
-                        # Проверяем доступность модели
-                        if any(fast_model in m for m in available):
-                            model_to_use = next((m for m in available if fast_model in m), None)
-                            if model_to_use:
-                                logger.info(f"Chat: Simple message -> using fast model: {model_to_use}")
-                                break
-                    
-                    # Fallback на gemma3:1b или qwen2.5:1.5b если не нашли
-                    if not model_to_use:
-                        for fallback in ["gemma3:1b", "qwen2.5:1.5b", "llama3.2:1b"]:
-                            if any(fallback in m for m in available):
-                                model_to_use = next((m for m in available if fallback in m), None)
+            except Exception as e:
+                logger.warning(f"Smart selection failed, using fallback: {e}")
+                # Fallback на старую логику
+                if complexity_info and complexity_info.level.value in ["trivial", "simple"]:
+                    ollama_provider = llm_manager.providers.get("ollama")
+                    if ollama_provider:
+                        fast_models = ollama_provider.recommended_models.get("fast", [])
+                        available = getattr(ollama_provider, '_available_models', [])
+                        for fast_model in fast_models:
+                            if any(fast_model in m for m in available):
+                                model_to_use = next((m for m in available if fast_model in m), None)
                                 if model_to_use:
-                                    logger.info(f"Chat: Using fallback fast model: {model_to_use}")
                                     break
         
-        # Если указана модель явно, используем её
+        # Если указана модель явно или выбрали автоматически
+        original_model = None
+        original_base_url = None
         if model_to_use:
             ollama_provider = llm_manager.providers.get("ollama")
             if ollama_provider:
                 # Временно меняем модель по умолчанию
                 original_model = ollama_provider.default_model
                 ollama_provider.default_model = model_to_use
+                
+                # Если нужно использовать другой сервер
+                if server_url_to_use and hasattr(ollama_provider, 'client'):
+                    original_base_url = ollama_provider.base_url
+                    ollama_provider.base_url = server_url_to_use
+                    # Пересоздаём клиент с новым URL
+                    import httpx
+                    ollama_provider.client = httpx.AsyncClient(
+                        base_url=server_url_to_use,
+                        timeout=ollama_provider.timeout
+                    )
+                    logger.info(f"Chat: Switched to server {server_url_to_use}")
+                
                 logger.info(f"Chat: Using model: {model_to_use}")
         
         # Генерируем ответ
@@ -233,11 +275,20 @@ async def chat(request: Request, chat_request: ChatRequest):
             max_tokens=2000
         )
         
-        # Восстанавливаем оригинальную модель если меняли
+        # Восстанавливаем оригинальную модель и сервер если меняли
         if model_to_use:
             ollama_provider = llm_manager.providers.get("ollama")
-            if ollama_provider and 'original_model' in locals():
-                ollama_provider.default_model = original_model
+            if ollama_provider:
+                if original_model:
+                    ollama_provider.default_model = original_model
+                # Восстанавливаем оригинальный сервер если меняли
+                if original_base_url:
+                    ollama_provider.base_url = original_base_url
+                    import httpx
+                    ollama_provider.client = httpx.AsyncClient(
+                        base_url=original_base_url,
+                        timeout=ollama_provider.timeout
+                    )
         
         # Определяем, была ли использована быстрая модель
         used_fast_model = (
@@ -261,7 +312,9 @@ async def chat(request: Request, chat_request: ChatRequest):
                 "complexity_level": complexity_info.level.value if complexity_info else None,
                 "estimated_minutes": complexity_info.estimated_minutes if complexity_info else None,
                 "smart_model_selection": True,  # Показываем что использовался умный выбор
-                "used_fast_model": used_fast_model  # Была ли использована быстрая модель
+                "used_fast_model": used_fast_model,  # Была ли использована быстрая модель
+                "distributed_routing": used_distributed,  # Была ли распределённая маршрутизация
+                "server_used": server_url_to_use  # Какой сервер использовался
             }
         )
         

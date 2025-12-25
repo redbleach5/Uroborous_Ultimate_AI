@@ -1,12 +1,17 @@
 """
 Resource-Aware Model Selector - Адаптивный выбор модели под доступные ресурсы
 Автоматически подстраивается под любое количество ресурсов с минимальной потерей качества
+
+Ключевые возможности:
+- Распределённый выбор моделей между несколькими Ollama серверами
+- Автоматическая маршрутизация на сервер с нужной моделью
+- Fallback на альтернативные модели/серверы
 """
 
 import asyncio
 import time
 from typing import Dict, Any, Optional, List, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from .logger import get_logger
 logger = get_logger(__name__)
@@ -14,6 +19,7 @@ logger = get_logger(__name__)
 from ..llm.providers import LLMProviderManager
 from .smart_model_selector import SmartModelSelector, ModelTier, ModelSelection
 from .model_performance_tracker import get_performance_tracker
+from .distributed_model_router import DistributedModelRouter, RoutingDecision
 
 
 class ResourceLevel(Enum):
@@ -41,7 +47,7 @@ class ResourceInfo:
 
 @dataclass
 class AdaptiveSelection:
-    """Адаптивный выбор модели с учетом ресурсов"""
+    """Адаптивный выбор модели с учетом ресурсов и распределения между серверами"""
     model: str
     provider: str
     tier: ModelTier
@@ -50,6 +56,11 @@ class AdaptiveSelection:
     speed_estimate: float  # Оценка скорости
     reason: str
     fallback_models: List[str]  # Резервные модели если основная недоступна
+    # Распределённая маршрутизация
+    server_url: Optional[str] = None  # URL сервера где есть модель
+    server_name: Optional[str] = None  # Имя сервера
+    used_distributed_routing: bool = False  # Была ли использована распределённая маршрутизация
+    routing_alternatives: List[Tuple[str, str]] = field(default_factory=list)  # [(model, server_url)]
 
 
 class ResourceAwareSelector:
@@ -57,6 +68,7 @@ class ResourceAwareSelector:
     Адаптивный селектор моделей, который подстраивается под доступные ресурсы
     
     Ключевые особенности:
+    - Распределённый выбор между несколькими Ollama серверами
     - Автоматическое определение доступных ресурсов
     - Выбор оптимальной модели под ресурсы
     - Адаптация сложности задач под малые модели
@@ -74,6 +86,15 @@ class ResourceAwareSelector:
         self.smart_selector = SmartModelSelector(llm_manager, config) if llm_manager else None
         self.performance_tracker = get_performance_tracker()
         
+        # Распределённый роутер для нескольких серверов
+        ollama_config = self.config.get("llm", {}).get("providers", {}).get("ollama", {})
+        self.distributed_mode = ollama_config.get("distributed_mode", False)
+        self.distributed_router: Optional[DistributedModelRouter] = None
+        
+        if self.distributed_mode:
+            self.distributed_router = DistributedModelRouter(self.config)
+            logger.info("Distributed model routing enabled")
+        
         # Кэш информации о ресурсах
         self._resource_info: Optional[ResourceInfo] = None
         self._resource_cache_ttl = 300  # 5 минут
@@ -89,7 +110,7 @@ class ResourceAwareSelector:
         }
     
     async def discover_resources(self) -> ResourceInfo:
-        """Обнаруживает доступные ресурсы"""
+        """Обнаруживает доступные ресурсы со всех серверов (при распределённом режиме)"""
         # Проверяем кэш
         current_time = time.time()
         if (self._resource_info and 
@@ -99,13 +120,27 @@ class ResourceAwareSelector:
         available_models = []
         resource_level = ResourceLevel.MINIMAL
         
-        if self.llm_manager:
-            # Получаем доступные модели из Ollama
+        # ======= РАСПРЕДЕЛЁННЫЙ РЕЖИМ: собираем модели со ВСЕХ серверов =======
+        if self.distributed_router:
+            try:
+                servers = await self.distributed_router.discover_all_servers()
+                # Собираем уникальные модели со всех доступных серверов
+                all_models = set()
+                for server in servers.values():
+                    if server.is_available:
+                        all_models.update(server.available_models)
+                available_models = list(all_models)
+                logger.info(f"Distributed discovery: {len(available_models)} models across {len([s for s in servers.values() if s.is_available])} servers")
+            except Exception as e:
+                logger.warning(f"Distributed discovery failed: {e}, falling back to local")
+        
+        # Fallback на локальный провайдер если нет распределённого или он не сработал
+        if not available_models and self.llm_manager:
             ollama_provider = self.llm_manager.providers.get("ollama")
             if ollama_provider:
                 try:
                     available_models = await ollama_provider.list_models()
-                    logger.info(f"Discovered {len(available_models)} available models")
+                    logger.info(f"Local discovery: {len(available_models)} available models")
                 except Exception as e:
                     logger.warning(f"Failed to list models: {e}")
         
@@ -291,19 +326,21 @@ class ResourceAwareSelector:
         task: str,
         task_type: Optional[str] = None,
         complexity: Optional[str] = None,
-        quality_requirement: Optional[str] = None
+        quality_requirement: Optional[str] = None,
+        preferred_model: Optional[str] = None
     ) -> AdaptiveSelection:
         """
-        Адаптивный выбор модели с учетом доступных ресурсов
+        Адаптивный выбор модели с учетом доступных ресурсов И распределения между серверами
         
         Args:
             task: Текст задачи
             task_type: Тип задачи
             complexity: Сложность задачи
             quality_requirement: Требование к качеству (fast, balanced, high)
+            preferred_model: Предпочитаемая модель
         
         Returns:
-            AdaptiveSelection с выбранной моделью и стратегией адаптации
+            AdaptiveSelection с выбранной моделью, сервером и стратегией адаптации
         """
         # Обнаруживаем ресурсы
         resources = await self.discover_resources()
@@ -319,6 +356,24 @@ class ResourceAwareSelector:
             complexity
         )
         
+        # ======= РАСПРЕДЕЛЁННАЯ МАРШРУТИЗАЦИЯ =======
+        routing_decision: Optional[RoutingDecision] = None
+        if self.distributed_router:
+            try:
+                require_fast = quality_requirement == "fast" or complexity in ["trivial", "simple"]
+                routing_decision = await self.distributed_router.route_request(
+                    preferred_model=preferred_model,
+                    task_type=task_type or "chat",
+                    complexity=complexity,
+                    require_fast=require_fast
+                )
+                logger.info(
+                    f"Distributed routing: {routing_decision.model} @ {routing_decision.server_name} "
+                    f"(fallback: {routing_decision.used_fallback})"
+                )
+            except Exception as e:
+                logger.warning(f"Distributed routing failed: {e}, using local selection")
+        
         # Выбираем модель
         if self.smart_selector:
             try:
@@ -329,14 +384,26 @@ class ResourceAwareSelector:
                     quality_requirement=quality_requirement
                 )
                 
-                # Проверяем доступность модели
-                if selection.model not in resources.available_models:
-                    # Ищем альтернативу
-                    selection = self._find_alternative_model(
-                        selection,
-                        resources,
-                        complexity
-                    )
+                # Если есть распределённый роутинг и модель там другая — используем его
+                if routing_decision:
+                    # Распределённый роутер нашёл лучший вариант
+                    if routing_decision.model != selection.model:
+                        # Проверяем, есть ли выбранная SmartSelector модель на каком-то сервере
+                        if selection.model in resources.available_models:
+                            # Модель из SmartSelector доступна локально — можно использовать её
+                            pass
+                        else:
+                            # Модели нет локально — используем то, что нашёл distributed router
+                            selection.model = routing_decision.model
+                            selection.reason = f"Distributed: {routing_decision.reason}"
+                else:
+                    # Без distributed router — проверяем доступность модели
+                    if selection.model not in resources.available_models:
+                        selection = self._find_alternative_model(
+                            selection,
+                            resources,
+                            complexity
+                        )
                 
                 # Оцениваем качество относительно идеала
                 quality_estimate = self._estimate_quality(
@@ -355,7 +422,8 @@ class ResourceAwareSelector:
                     complexity
                 )
                 
-                return AdaptiveSelection(
+                # Формируем результат с учётом распределённой маршрутизации
+                result = AdaptiveSelection(
                     model=selection.model,
                     provider=selection.provider,
                     tier=selection.tier,
@@ -365,13 +433,34 @@ class ResourceAwareSelector:
                     reason=f"Selected for {resources.level.value} resources, "
                            f"quality: {quality_estimate:.2f}, "
                            f"speed: {speed_estimate:.2f}",
-                    fallback_models=fallback_models
+                    fallback_models=fallback_models,
+                    used_distributed_routing=routing_decision is not None
                 )
+                
+                # Добавляем информацию о сервере если использовали распределённый роутинг
+                if routing_decision:
+                    result.server_url = routing_decision.server_url
+                    result.server_name = routing_decision.server_name
+                    result.routing_alternatives = routing_decision.alternatives
+                    result.reason = f"Distributed: {routing_decision.server_name} ({routing_decision.reason})"
+                
+                return result
             except Exception as e:
                 logger.warning(f"SmartModelSelector failed: {e}, using fallback")
         
         # Fallback на простой выбор
-        return self._fallback_selection(resources, complexity)
+        fallback = self._fallback_selection(resources, complexity)
+        
+        # Применяем распределённый роутинг к fallback если есть
+        if routing_decision:
+            fallback.model = routing_decision.model
+            fallback.server_url = routing_decision.server_url
+            fallback.server_name = routing_decision.server_name
+            fallback.used_distributed_routing = True
+            fallback.routing_alternatives = routing_decision.alternatives
+            fallback.reason = f"Distributed fallback: {routing_decision.reason}"
+        
+        return fallback
     
     def _adapt_quality_requirement(
         self,
