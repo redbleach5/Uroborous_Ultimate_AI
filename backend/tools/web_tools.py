@@ -108,11 +108,11 @@ class WebSearchTool(BaseTool):
             matches = re.findall(link_pattern, html)
             
             # Filter out DuckDuckGo internal links
-            for url, title in matches:
-                if url.startswith('http') and 'duckduckgo.com' not in url:
-                results.append({
-                    "title": title.strip(),
-                    "url": url,
+            for link_url, title in matches:
+                if link_url.startswith('http') and 'duckduckgo.com' not in link_url:
+                    results.append({
+                        "title": title.strip(),
+                        "url": link_url,
                         "snippet": ""
                     })
                     if len(results) >= max_results:
@@ -137,14 +137,14 @@ class WebSearchTool(BaseTool):
             List of search results
         """
         try:
-                api_url = "https://api.duckduckgo.com/"
+            api_url = "https://api.duckduckgo.com/"
             params = {
-                    "q": query,
-                    "format": "json",
-                    "no_html": "1",
-                    "skip_disambig": "1"
-                }
-                
+                "q": query,
+                "format": "json",
+                "no_html": "1",
+                "skip_disambig": "1"
+            }
+            
             headers = {
                 "User-Agent": "AILLM/1.0 (AI Assistant)"
             }
@@ -154,23 +154,23 @@ class WebSearchTool(BaseTool):
             data = response.json()
             
             results = []
-                
+            
             # Abstract (main answer)
             if data.get("Abstract"):
-                        results.append({
+                results.append({
                     "title": data.get("Heading", "Answer"),
                     "url": data.get("AbstractURL", ""),
                     "snippet": data.get("Abstract", "")
-                        })
-                
+                })
+            
             # Related topics
             for topic in data.get("RelatedTopics", [])[:max_results - len(results)]:
-                        if isinstance(topic, dict) and "FirstURL" in topic:
-                            results.append({
+                if isinstance(topic, dict) and "FirstURL" in topic:
+                    results.append({
                         "title": topic.get("Text", "")[:100],
-                                "url": topic.get("FirstURL", ""),
-                                "snippet": topic.get("Text", "")
-                            })
+                        "url": topic.get("FirstURL", ""),
+                        "snippet": topic.get("Text", "")
+                    })
             
             return results
             
@@ -282,4 +282,3 @@ class APICallTool(BaseTool):
         except httpx.HTTPError as e:
             logger.error(f"APICallTool error: {e}")
             return ToolOutput(success=False, result=None, error=str(e))
-
