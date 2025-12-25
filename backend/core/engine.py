@@ -26,6 +26,7 @@ from .intelligent_monitor import get_monitor, initialize_monitor, IssueSeverity
 from .pydantic_utils import pydantic_to_dict
 from .learning_system import get_learning_system, initialize_learning_system
 from .resource_aware_selector import ResourceAwareSelector
+from .easter_eggs import startup_birthday_check
 
 
 class IDAEngine:
@@ -204,6 +205,10 @@ class IDAEngine:
             self._status_update_task = asyncio.create_task(self._periodic_status_update())
             
             self._initialized = True
+            
+            # 🥚 Проверяем пасхалки (например, день рождения создателя)
+            startup_birthday_check()
+            
             logger.info("IDAEngine initialization complete")
             
         except Exception as e:

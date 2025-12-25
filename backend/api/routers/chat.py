@@ -10,6 +10,7 @@ from datetime import datetime
 
 from backend.core.logger import get_logger
 from backend.llm.base import LLMMessage
+from backend.core.easter_eggs import check_easter_egg_trigger, get_birthday_greeting
 
 logger = get_logger(__name__)
 
@@ -127,6 +128,10 @@ async def chat(request: Request, chat_request: ChatRequest):
             logger.info(f"Chat complexity warning: {complexity_info.level.value}, ~{complexity_info.estimated_minutes:.1f} min")
     except Exception as e:
         logger.debug(f"Complexity analysis failed (non-critical): {e}")
+    
+    # 🥚 Проверяем пасхалки
+    easter_egg = check_easter_egg_trigger(chat_request.message)
+    birthday_greeting = get_birthday_greeting()  # Проверка на день рождения
     
     try:
         # Формируем сообщения
@@ -298,9 +303,24 @@ async def chat(request: Request, chat_request: ChatRequest):
             any(x in response.model.lower() for x in ["1b", "1.5b", "2b"])
         )
         
+        # 🥚 Формируем финальный ответ с учётом пасхалок
+        final_message = response.content
+        
+        # Если сегодня день рождения, добавляем поздравление к первому сообщению дня
+        if birthday_greeting and not chat_request.history:
+            final_message = f"{birthday_greeting}\n\n---\n\n{response.content}"
+        
+        # Если сработала пасхалка, добавляем её к ответу
+        if easter_egg:
+            easter_msg = easter_egg.get("message", "")
+            if easter_egg.get("type") == "birthday" and easter_egg.get("art"):
+                # Для birthday показываем компактное сообщение
+                easter_msg = f"\n\n---\n\n{easter_msg}\n\n{easter_egg.get('extra', '')}"
+            final_message = f"{response.content}{easter_msg}"
+        
         return ChatResponse(
             success=True,
-            message=response.content,
+            message=final_message,
             warning=complexity_warning,  # Предупреждение о сложности (если было)
             metadata={
                 "model": response.model,
@@ -312,6 +332,7 @@ async def chat(request: Request, chat_request: ChatRequest):
                 "complexity_level": complexity_info.level.value if complexity_info else None,
                 "estimated_minutes": complexity_info.estimated_minutes if complexity_info else None,
                 "smart_model_selection": True,  # Показываем что использовался умный выбор
+                "easter_egg": easter_egg.get("type") if easter_egg else None,  # 🥚
                 "used_fast_model": used_fast_model,  # Была ли использована быстрая модель
                 "distributed_routing": used_distributed,  # Была ли распределённая маршрутизация
                 "server_used": server_url_to_use  # Какой сервер использовался
