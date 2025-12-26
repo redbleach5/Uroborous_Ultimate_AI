@@ -160,7 +160,16 @@ class ToolRegistry:
         logger.info("Tool Registry configuration updated")
     
     async def shutdown(self) -> None:
-        """Shutdown tool registry"""
+        """Shutdown tool registry and close all tool resources"""
+        # Shutdown tools that have shutdown method (e.g., to close HTTP clients)
+        for tool_name, tool in self.tools.items():
+            if hasattr(tool, 'shutdown') and callable(tool.shutdown):
+                try:
+                    await tool.shutdown()
+                    logger.debug(f"Shutdown tool: {tool_name}")
+                except Exception as e:
+                    logger.warning(f"Error shutting down tool {tool_name}: {e}")
+        
         self.tools.clear()
         self._initialized = False
 

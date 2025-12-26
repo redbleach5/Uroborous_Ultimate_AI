@@ -97,7 +97,6 @@ class Orchestrator:
         # - "напиши код игры" -> code_writer
         # - "напиши отчёт о проекте" -> research  
         # - "напиши что делает этот код" -> research
-        is_code_gen = False  # Отключаем жёсткую логику, доверяем LLMClassifier
         
         # Use TaskRouter for intelligent routing if available and agent not pre-selected
         # Cache routing result to avoid double calls

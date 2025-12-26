@@ -1,11 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   CircleCheck, CircleX, Brain, Search, RefreshCw, Zap, 
-  AlertTriangle, Lightbulb, Clock, Bot, FileText
+  AlertTriangle, Lightbulb, Clock, Bot, FileText, ThumbsUp, ThumbsDown
 } from 'lucide-react';
 import { renderMarkdown } from './MarkdownRenderer';
 import { CodeBlock, extractCodeFromMarkdown, CodeExecutionResult } from './CodeExecutor';
-import { ChatMessage as Message, ReflectionData } from '../state/chatStore';
+import { ChatMessage as Message, ReflectionData, FeedbackData } from '../state/chatStore';
+import { submitFeedback } from '../api/client';
 
 // Re-export for convenience
 export type { Message };
@@ -255,6 +256,87 @@ const FilesList: React.FC<FilesListProps> = ({ files, onDownloadCode }) => (
   </div>
 );
 
+// ============ Feedback Component ============
+
+interface FeedbackButtonsProps {
+  message: Message;
+  onFeedbackSubmit: (messageId: string, feedback: FeedbackData) => void;
+}
+
+const FeedbackButtons: React.FC<FeedbackButtonsProps> = ({ message, onFeedbackSubmit }) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [localFeedback, setLocalFeedback] = useState<FeedbackData | undefined>(message.feedback);
+
+  const handleFeedback = async (rating: 'positive' | 'negative') => {
+    if (isSubmitting || localFeedback?.submitted) return;
+    
+    setIsSubmitting(true);
+    const newFeedback: FeedbackData = { rating, submitted: false };
+    setLocalFeedback(newFeedback);
+
+    try {
+      await submitFeedback({
+        task: message.content?.substring(0, 500) || 'Unknown task',
+        solution: message.result?.code || message.content || '',
+        rating: rating === 'positive' ? 5 : 1,
+        is_helpful: rating === 'positive',
+        agent: message.metadata?.model,
+        model: message.metadata?.model,
+        provider: message.metadata?.provider,
+        solution_id: message.id,
+      });
+      
+      const submittedFeedback: FeedbackData = { rating, submitted: true };
+      setLocalFeedback(submittedFeedback);
+      onFeedbackSubmit(message.id, submittedFeedback);
+    } catch (error) {
+      console.error('Failed to submit feedback:', error);
+      // Still mark as submitted locally to avoid spam
+      const failedFeedback: FeedbackData = { rating, submitted: true };
+      setLocalFeedback(failedFeedback);
+      onFeedbackSubmit(message.id, failedFeedback);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const currentRating = localFeedback?.rating || message.feedback?.rating;
+  const isSubmitted = localFeedback?.submitted || message.feedback?.submitted;
+
+  return (
+    <div className="flex items-center gap-2 mt-3 pt-3 border-t border-[#2a2f46]/50">
+      <span className="text-xs text-gray-500 mr-1">Оценить ответ:</span>
+      <button
+        onClick={() => handleFeedback('positive')}
+        disabled={isSubmitting || isSubmitted}
+        className={`p-1.5 rounded-lg transition-all duration-200 ${
+          currentRating === 'positive'
+            ? 'bg-green-500/30 text-green-400 border border-green-500/50'
+            : 'bg-[#0f111b]/60 text-gray-400 hover:text-green-400 hover:bg-green-500/20 border border-transparent hover:border-green-500/30'
+        } ${isSubmitting ? 'opacity-50 cursor-wait' : isSubmitted && currentRating !== 'positive' ? 'opacity-30' : ''}`}
+        title="Полезный ответ"
+      >
+        <ThumbsUp size={14} strokeWidth={1.5} />
+      </button>
+      <button
+        onClick={() => handleFeedback('negative')}
+        disabled={isSubmitting || isSubmitted}
+        className={`p-1.5 rounded-lg transition-all duration-200 ${
+          currentRating === 'negative'
+            ? 'bg-red-500/30 text-red-400 border border-red-500/50'
+            : 'bg-[#0f111b]/60 text-gray-400 hover:text-red-400 hover:bg-red-500/20 border border-transparent hover:border-red-500/30'
+        } ${isSubmitting ? 'opacity-50 cursor-wait' : isSubmitted && currentRating !== 'negative' ? 'opacity-30' : ''}`}
+        title="Неполезный ответ"
+      >
+        <ThumbsDown size={14} strokeWidth={1.5} />
+      </button>
+      {isSubmitted && (
+        <span className="text-xs text-gray-500 ml-1">Спасибо за оценку!</span>
+      )}
+    </div>
+  );
+};
+
 // ============ Main ChatMessage Component ============
 
 interface ChatMessageComponentProps {
@@ -264,6 +346,7 @@ interface ChatMessageComponentProps {
   executionResult?: CodeExecutionResult;
   onRunCode: (code: string, messageId: string, files?: any[]) => void;
   onDownloadCode: (code: string, filename: string) => void;
+  onFeedbackSubmit?: (messageId: string, feedback: FeedbackData) => void;
 }
 
 export const ChatMessage: React.FC<ChatMessageComponentProps> = ({
@@ -273,6 +356,7 @@ export const ChatMessage: React.FC<ChatMessageComponentProps> = ({
   executionResult,
   onRunCode,
   onDownloadCode,
+  onFeedbackSubmit,
 }) => {
   const code = message.result?.code || extractCodeFromMarkdown(message.content || '');
   
@@ -370,6 +454,11 @@ export const ChatMessage: React.FC<ChatMessageComponentProps> = ({
                 {/* Files list */}
                 {message.result?.files && Array.isArray(message.result.files) && message.result.files.length > 0 && (
                   <FilesList files={message.result.files} onDownloadCode={onDownloadCode} />
+                )}
+
+                {/* Feedback buttons */}
+                {onFeedbackSubmit && (
+                  <FeedbackButtons message={message} onFeedbackSubmit={onFeedbackSubmit} />
                 )}
               </div>
             )}

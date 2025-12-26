@@ -418,37 +418,19 @@ class BaseAgent(ABC, ReflectionMixin, UncertaintySearchMixin):
             self._current_execution_context.get("ollama_server_url")
         )
         
-        # Если указан другой сервер Ollama, временно переключаемся
-        original_base_url = None
-        ollama_provider = self.llm_manager.providers.get("ollama") if self.llm_manager else None
-        if ollama_server_url and ollama_provider and provider == "ollama":
-            original_base_url = ollama_provider.base_url
-            ollama_provider.base_url = ollama_server_url
-            import httpx
-            ollama_provider.client = httpx.AsyncClient(
-                base_url=ollama_server_url,
-                timeout=ollama_provider.timeout
-            )
-            logger.debug(f"Agent {self.name} switched to Ollama server: {ollama_server_url}")
+        # Pass server_url to provider (thread-safe, no global state modification)
+        if ollama_server_url and provider == "ollama":
+            kwargs["server_url"] = ollama_server_url
+            logger.debug(f"Agent {self.name} using Ollama server: {ollama_server_url}")
         
-        try:
-            response = await self.llm_manager.generate(
-                messages=enhanced_messages,
-                provider_name=provider,
-                model=model_to_use,
-                temperature=self.temperature,
-                thinking_mode=thinking_mode,
-                **kwargs
-            )
-        finally:
-            # Восстанавливаем оригинальный сервер если переключались
-            if original_base_url and ollama_provider:
-                ollama_provider.base_url = original_base_url
-                import httpx
-                ollama_provider.client = httpx.AsyncClient(
-                    base_url=original_base_url,
-                    timeout=ollama_provider.timeout
-                )
+        response = await self.llm_manager.generate(
+            messages=enhanced_messages,
+            provider_name=provider,
+            model=model_to_use,
+            temperature=self.temperature,
+            thinking_mode=thinking_mode,
+            **kwargs
+        )
         
         # Log thinking trace if available
         if response.has_thinking and response.thinking:

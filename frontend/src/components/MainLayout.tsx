@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query';
 import { UnifiedChat } from './UnifiedChat';
 import { IDE } from './IDE';
 import { ToolsPanel } from './ToolsPanel';
-import { ProjectIndexer } from './ProjectIndexer';
 import { MonitoringPanel } from './MonitoringPanel';
 import { MetricsPanel } from './MetricsPanel';
 import { LearningDashboard } from './LearningDashboard';
@@ -11,18 +10,20 @@ import SettingsPanel from './SettingsPanel';
 import { getStatus } from '../api/client';
 import { useExecutionInfo } from '../state/executionContext';
 import {
-  MessageSquare, Code2, Database, Activity, BarChart3, 
+  MessageSquare, Code2, Activity, BarChart3, 
   GraduationCap, Settings, Bot, Brain, Wrench, AlertCircle, X, RefreshCw
 } from 'lucide-react';
 import { UroborosLogo } from './icons/UroborosLogo';
 
 export function MainLayout() {
   const [activeTab, setActiveTab] = useState<
-    'chat' | 'ide' | 'tools' | 'indexer' | 'monitoring' | 'metrics' | 'learning' | 'settings'
+    'chat' | 'ide' | 'tools' | 'monitoring' | 'metrics' | 'learning' | 'settings'
   >(() => {
     const saved = localStorage.getItem('activeTab');
-    if (saved && ['chat', 'ide', 'tools', 'indexer', 'monitoring', 'metrics', 'learning', 'settings'].includes(saved)) {
-      return saved as 'chat' | 'ide' | 'tools' | 'indexer' | 'monitoring' | 'metrics' | 'learning' | 'settings';
+    // Redirect old 'indexer' tab to 'ide' (indexing is now in IDE)
+    if (saved === 'indexer') return 'ide';
+    if (saved && ['chat', 'ide', 'tools', 'monitoring', 'metrics', 'learning', 'settings'].includes(saved)) {
+      return saved as 'chat' | 'ide' | 'tools' | 'monitoring' | 'metrics' | 'learning' | 'settings';
     }
     return 'chat';
   });
@@ -205,17 +206,6 @@ export function MainLayout() {
           <span>Инструменты</span>
         </button>
         <button
-          onClick={() => setActiveTab('indexer')}
-          className={`px-5 py-3 whitespace-nowrap font-medium transition-all duration-200 flex items-center gap-2 ${
-            activeTab === 'indexer' 
-              ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-600/30 border-b-2 border-blue-500' 
-              : 'text-gray-400 hover:text-white hover:bg-[#1f2236]'
-          }`}
-        >
-          <Database size={16} strokeWidth={1.5} />
-          <span>Индексация</span>
-        </button>
-        <button
           onClick={() => setActiveTab('monitoring')}
           className={`px-5 py-3 whitespace-nowrap font-medium transition-all duration-200 flex items-center gap-2 ${
             activeTab === 'monitoring' 
@@ -266,7 +256,6 @@ export function MainLayout() {
         {activeTab === 'chat' && <UnifiedChat />}
         {activeTab === 'ide' && <IDE />}
         {activeTab === 'tools' && <ToolsPanel />}
-        {activeTab === 'indexer' && <ProjectIndexer />}
         {activeTab === 'monitoring' && <MonitoringPanel />}
         {activeTab === 'metrics' && <MetricsPanel />}
         {activeTab === 'learning' && <LearningDashboard />}

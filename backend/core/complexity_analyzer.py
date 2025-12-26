@@ -169,14 +169,14 @@ class ComplexityAnalyzer:
         try:
             import os
             resource_info["cpu_cores"] = os.cpu_count() or 4
-        except:
+        except (OSError, AttributeError):
             pass
         
         # Получаем информацию о RAM (локально)
         try:
             import psutil
             resource_info["ram_gb"] = psutil.virtual_memory().total / (1024**3)
-        except:
+        except (ImportError, AttributeError, OSError):
             pass
         
         # Определяем уровень ресурсов на основе GPU

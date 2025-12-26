@@ -235,7 +235,7 @@ class LearningSystem:
                         if agent_name in self._agent_stats:
                             for issue in issues[:3]:  # Берём до 3 проблем
                                 self._agent_stats[agent_name].common_issues[issue] += 1
-                    except:
+                    except (json.JSONDecodeError, TypeError, KeyError):
                         pass
             
             # Загружаем успешные паттерны

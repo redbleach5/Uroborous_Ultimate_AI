@@ -12,6 +12,7 @@ from .multimodal_mixin import MultimodalMixin
 from ..llm.base import LLMMessage
 from ..core.exceptions import AgentException
 from ..core.two_stage_processor import TwoStageProcessor, ProcessingStage
+from ..core.text_utils import extract_code_from_markdown, detect_language_from_task
 
 
 class CodeWriterAgent(BaseAgent, MultimodalMixin):
@@ -130,63 +131,6 @@ GUIDELINES:
                         powerful_provider=None  # Auto-select
                     )
                     
-                    def _detect_language(task_text: str) -> Tuple[Optional[str], Optional[str]]:
-                        """
-                        Very lightweight heuristic detector: scans task text for known language names/aliases.
-                        Also detects visual/web projects that should use HTML/CSS/JS.
-                        Returns (language, matched_alias).
-                        """
-                        text_lower = task_text.lower()
-                        
-                        # First check for explicit visual/web indicators → HTML/CSS/JS
-                        visual_indicators = [
-                            "неоновый", "neon", "стиль", "дизайн", "интерфейс", "ui", 
-                            "веб", "web", "сайт", "site", "страниц", "page", "браузер", "browser",
-                            "html", "css", "анимац", "animat", "красив", "визуал",
-                            "кнопк", "button", "форм", "form", "меню", "menu"
-                        ]
-                        # Games with visual style should be HTML/CSS/JS
-                        is_visual_game = ("игр" in text_lower or "game" in text_lower) and any(
-                            ind in text_lower for ind in ["неоновый", "neon", "стиль", "красив", "визуал", "3d", "2d", "график", "graphic"]
-                        )
-                        if is_visual_game or any(ind in text_lower for ind in visual_indicators):
-                            # Check it's not explicitly asking for another language
-                            explicit_langs = ["python", "питон", "py ", "java ", "c++", "c#", "rust", "go ", "golang"]
-                            if not any(lang in text_lower for lang in explicit_langs):
-                                return "html", "visual/web project"
-                        
-                        lang_map = {
-                            "python": ["python", "питон", "py"],
-                            "javascript": ["javascript", "js", "жс"],
-                            "typescript": ["typescript", "ts"],
-                            "html": ["html", "css", "веб-страниц", "webpage"],
-                            "go": ["go", "golang", "го", "голанг"],
-                            "java": ["java", "ява"],
-                            "c#": ["c#", "c sharp", "c-шарп", "си шарп"],
-                            "c++": ["c++", "c plus plus", "cpp", "си плюс плюс"],
-                            "rust": ["rust", "раст"],
-                            "kotlin": ["kotlin", "котлин"],
-                            "swift": ["swift", "свифт"],
-                            "php": ["php"],
-                            "ruby": ["ruby", "руби"],
-                            "dart": ["dart"],
-                            "elixir": ["elixir"],
-                            "scala": ["scala"],
-                            "haskell": ["haskell"],
-                            "lua": ["lua", "луа"],
-                            "bash": ["bash", "sh", "shell", "bash-скрипт"],
-                            "r": [" r ", " r\n", " r\t"],
-                            "matlab": ["matlab"],
-                            "julia": ["julia"],
-                            "sql": ["sql"],
-                        }
-                        text = f" {text_lower} "
-                        for lang, aliases in lang_map.items():
-                            for alias in aliases:
-                                if f" {alias} " in text:
-                                    return lang, alias
-                        return None, None
-
                     async def fast_code_analysis(task: str) -> Dict[str, Any]:
                         """Быстрый анализ требований к коду"""
                         analysis_prompt = f"""Проанализируй задачу генерации кода и определи:
@@ -229,14 +173,14 @@ JSON ответ:
                                     logger.debug(f"Failed to parse JSON from LLM response: {e}")
                                     # Fallback to language detection
                         # Fallback to heuristic autodetect (no hard default to Python)
-                        lang, _ = _detect_language(task)
+                        lang, _ = detect_language_from_task(task)
                         return {"language": lang or "auto", "code_type": "function", "requirements": [], "complexity": "medium"}
                     
                     async def powerful_code_generation(task: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
                         """Мощная генерация кода на основе анализа"""
                         # Resolve language priority: LLM analysis -> heuristic -> default python
                         lang = analysis.get("language")
-                        heuristic_lang, _ = _detect_language(task)
+                        heuristic_lang, _ = detect_language_from_task(task)
                         language = lang if lang and lang != "auto" else heuristic_lang or "python"
                         code_type = analysis.get("code_type", "function")
                         requirements = analysis.get("requirements", [])
@@ -270,28 +214,7 @@ JSON ответ:
                         )
                         
                         if response and response.content:
-                            code = response.content
-                            # Extract code from markdown if present
-                            if "```" in code:
-                                # Use regex for better handling of multi-line code blocks
-                                import re
-                                code_block_pattern = r'```(?:\w+)?\s*\n?([\s\S]*?)```'
-                                matches = re.findall(code_block_pattern, code)
-                                if matches:
-                                    # Get the largest code block (likely the main code)
-                                    code = max(matches, key=len).strip()
-                                else:
-                                    # Fallback to line-by-line extraction
-                                    lines = code.split("\n")
-                                    code_lines = []
-                                    in_code_block = False
-                                    for line in lines:
-                                        if line.strip().startswith("```"):
-                                            in_code_block = not in_code_block
-                                            continue
-                                        if in_code_block:
-                                            code_lines.append(line)
-                                    code = "\n".join(code_lines)
+                            code = extract_code_from_markdown(response.content)
                             return {"code": code, "analysis": analysis}
                         
                         return {"code": "", "analysis": analysis}
@@ -315,26 +238,7 @@ JSON ответ:
                         
                         if code:
                             # Extract code from markdown if present
-                            if "```" in code:
-                                # Use regex for better handling of multi-line code blocks
-                                import re
-                                code_block_pattern = r'```(?:\w+)?\s*\n?([\s\S]*?)```'
-                                matches = re.findall(code_block_pattern, code)
-                                if matches:
-                                    # Get the largest code block (likely the main code)
-                                    code = max(matches, key=len).strip()
-                                else:
-                                    # Fallback to line-by-line extraction
-                                    lines = code.split("\n")
-                                    code_lines = []
-                                    in_code_block = False
-                                    for line in lines:
-                                        if line.strip().startswith("```"):
-                                            in_code_block = not in_code_block
-                                            continue
-                                        if in_code_block:
-                                            code_lines.append(line)
-                                    code = "\n".join(code_lines)
+                            code = extract_code_from_markdown(code)
                             
                             result_dict = {
                                 "agent": self.name,
@@ -365,26 +269,7 @@ JSON ответ:
             code = await self._get_llm_response(messages)
             
             # Extract code from markdown if present
-            if "```" in code:
-                # Try regex first for better handling of multi-line code blocks
-                import re
-                code_block_pattern = r'```(?:\w+)?\s*\n?([\s\S]*?)```'
-                matches = re.findall(code_block_pattern, code)
-                if matches:
-                    # Get the largest code block (likely the main code)
-                    code = max(matches, key=len).strip()
-                else:
-                    # Fallback to line-by-line extraction
-                    lines = code.split("\n")
-                    code_lines = []
-                    in_code_block = False
-                    for line in lines:
-                        if line.strip().startswith("```"):
-                            in_code_block = not in_code_block
-                            continue
-                        if in_code_block:
-                            code_lines.append(line)
-                    code = "\n".join(code_lines)
+            code = extract_code_from_markdown(code)
             
             result = {
                 "agent": self.name,

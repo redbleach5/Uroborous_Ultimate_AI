@@ -18,6 +18,7 @@ import httpx
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+from contextlib import asynccontextmanager
 from .logger import get_logger
 
 logger = get_logger(__name__)
@@ -64,12 +65,22 @@ class DistributedModelRouter:
         self.servers: Dict[str, OllamaServer] = {}
         self.model_index: Dict[str, List[OllamaServer]] = {}
         
-        self._cache_ttl = 30  # Кэш на 30 секунд
+        # Configurable timeouts
+        ollama_config = config.get("llm", {}).get("providers", {}).get("ollama", {})
+        self._cache_ttl = ollama_config.get("discovery_cache_ttl", 30)  # Кэш на 30 секунд
         self._last_discovery = 0.0
-        self._timeout = 2.0
-        self._discovery_in_progress = False
+        self._timeout = ollama_config.get("discovery_timeout", 2.0)
+        
+        # Thread-safe discovery with asyncio.Lock
+        self._discovery_lock: Optional[asyncio.Lock] = None
         
         self._initialize_servers_from_config()
+    
+    def _get_discovery_lock(self) -> asyncio.Lock:
+        """Lazy initialization of discovery lock (must be created in event loop)"""
+        if self._discovery_lock is None:
+            self._discovery_lock = asyncio.Lock()
+        return self._discovery_lock
     
     def _initialize_servers_from_config(self):
         """Инициализирует список серверов из конфигурации"""
@@ -105,23 +116,29 @@ class DistributedModelRouter:
             priority=priority
         )
     
-    async def discover_all_servers(self):
-        """Обнаруживает все серверы и их модели"""
-        current_time = time.time()
+    async def discover_all_servers(self) -> Dict[str, OllamaServer]:
+        """
+        Обнаруживает все серверы и их модели.
         
-        if current_time - self._last_discovery < self._cache_ttl:
-            return
+        Thread-safe: использует asyncio.Lock для предотвращения race conditions.
+        Если discovery уже выполняется в другом coroutine, ждёт его завершения.
         
-        if self._discovery_in_progress:
-            return
+        Returns:
+            Dict[str, OllamaServer]: Словарь всех серверов
+        """
+        lock = self._get_discovery_lock()
         
-        self._discovery_in_progress = True
-        
-        try:
+        async with lock:
+            current_time = time.time()
+            
+            # Проверяем кэш внутри lock, чтобы избежать повторного discovery
+            if current_time - self._last_discovery < self._cache_ttl:
+                return self.servers
+            
             await self._do_discovery()
-        finally:
-            self._discovery_in_progress = False
             self._last_discovery = current_time
+            
+        return self.servers
     
     async def _do_discovery(self):
         """Выполняет обнаружение серверов"""

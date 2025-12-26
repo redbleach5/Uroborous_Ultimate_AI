@@ -2,6 +2,7 @@
 FastAPI application entry point
 """
 
+from typing import Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -21,8 +22,8 @@ logger = get_logger(__name__)
 
 
 # Global engine and preview manager instances
-engine: IDAEngine = None
-preview_manager: PreviewManager = None
+engine: Optional[IDAEngine] = None
+preview_manager: Optional[PreviewManager] = None
 
 
 @asynccontextmanager
@@ -153,6 +154,20 @@ async def health():
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time communication"""
     await websocket.accept()
+    logger.info("WebSocket client connected")
+    
+    async def send_progress(stage: str, progress: float, message: str, data: dict = None):
+        """Callback для отправки прогресса клиенту"""
+        try:
+            await websocket.send_json({
+                "type": "progress",
+                "stage": stage,
+                "progress": progress,
+                "message": message,
+                "data": data or {}
+            })
+        except Exception as e:
+            logger.warning(f"Failed to send progress: {e}")
     
     try:
         while True:
@@ -161,22 +176,110 @@ async def websocket_endpoint(websocket: WebSocket):
             # Handle different message types
             message_type = data.get("type")
             
-            if message_type == "task":
-                # Execute task
+            if message_type == "ping":
+                # Heartbeat для поддержания соединения
+                await websocket.send_json({"type": "pong"})
+            
+            elif message_type == "task":
+                # Execute task with progress updates
                 task = data.get("task")
                 agent_type = data.get("agent_type")
                 context = data.get("context", {})
+                model = data.get("model")
+                provider = data.get("provider")
                 
                 if engine:
-                    result = await engine.execute_task(task, agent_type, context)
-                    await websocket.send_json({
-                        "type": "result",
-                        "data": result
-                    })
+                    # Отправляем начало
+                    await send_progress("started", 0, f"Начинаем выполнение задачи...")
+                    
+                    try:
+                        # Добавляем callback для прогресса в контекст
+                        context["_progress_callback"] = send_progress
+                        context["model"] = model
+                        context["provider"] = provider
+                        
+                        await send_progress("processing", 20, "Анализируем задачу...")
+                        
+                        result = await engine.execute_task(task, agent_type, context)
+                        
+                        await send_progress("completed", 100, "Задача выполнена!")
+                        
+                        await websocket.send_json({
+                            "type": "result",
+                            "data": result,
+                            "success": True
+                        })
+                    except Exception as task_error:
+                        logger.error(f"Task execution error: {task_error}")
+                        await send_progress("error", 0, str(task_error))
+                        await websocket.send_json({
+                            "type": "result",
+                            "data": {"error": str(task_error)},
+                            "success": False
+                        })
                 else:
                     await websocket.send_json({
                         "type": "error",
                         "message": "Движок не инициализирован"
+                    })
+            
+            elif message_type == "chat":
+                # Chat with progress
+                message = data.get("message")
+                history = data.get("history", [])
+                mode = data.get("mode", "general")
+                model = data.get("model")
+                provider = data.get("provider")
+                
+                if engine and engine.llm_manager:
+                    await send_progress("started", 0, "Обрабатываем сообщение...")
+                    
+                    try:
+                        from backend.api.routers.chat import ChatRequest, chat
+                        from unittest.mock import Mock
+                        
+                        # Создаём mock request с необходимыми атрибутами
+                        mock_request = Mock()
+                        mock_request.app.state.engine = engine
+                        
+                        chat_request = ChatRequest(
+                            message=message,
+                            history=[{"role": h["role"], "content": h["content"]} for h in history] if history else None,
+                            mode=mode,
+                            model=model,
+                            provider=provider
+                        )
+                        
+                        await send_progress("processing", 50, "Генерируем ответ...")
+                        
+                        response = await chat(mock_request, chat_request)
+                        
+                        await send_progress("completed", 100, "Готово!")
+                        
+                        await websocket.send_json({
+                            "type": "chat_response",
+                            "data": {
+                                "success": response.success,
+                                "message": response.message,
+                                "error": response.error,
+                                "warning": response.warning,
+                                "metadata": response.metadata
+                            }
+                        })
+                    except Exception as chat_error:
+                        logger.error(f"Chat error via WebSocket: {chat_error}")
+                        await websocket.send_json({
+                            "type": "chat_response",
+                            "data": {
+                                "success": False,
+                                "message": "",
+                                "error": str(chat_error)
+                            }
+                        })
+                else:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "LLM провайдер не доступен"
                     })
             
             elif message_type == "status":
@@ -188,14 +291,25 @@ async def websocket_endpoint(websocket: WebSocket):
                         "data": status
                     })
             
+            elif message_type == "subscribe":
+                # Подписка на обновления статуса
+                channel = data.get("channel", "status")
+                await websocket.send_json({
+                    "type": "subscribed",
+                    "channel": channel
+                })
+            
     except WebSocketDisconnect:
-        logger.info("WebSocket disconnected")
+        logger.info("WebSocket client disconnected")
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
-        await websocket.send_json({
-            "type": "error",
-            "message": str(e)
-        })
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": str(e)
+            })
+        except (WebSocketDisconnect, RuntimeError, ConnectionError):
+            pass  # Connection already closed
 
 
 if __name__ == "__main__":

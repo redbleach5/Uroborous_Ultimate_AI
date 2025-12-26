@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
-import { executeTask, executeTool, getAvailableModels, selectModel, ModelInfo } from '../api/client';
+import { executeTask, executeTool, getAvailableModels, selectModel, indexProject, ModelInfo } from '../api/client';
 import {
   Folder, FolderOpen, File, FileCode, FileJson, FileText, FileCog,
   Code, Code2, Terminal, Database, Globe, Lock,
@@ -174,7 +174,15 @@ export function IDE() {
   const [bottomPanelOpen, setBottomPanelOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
+  
+  // Indexing state
+  const [indexing, setIndexing] = useState(false);
+  const [indexStatus, setIndexStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [showRecentProjects, setShowRecentProjects] = useState(false);
+  
+  // Smart suggestion state
+  const [showAnalysisSuggestion, setShowAnalysisSuggestion] = useState(false);
+  const [autoIndexingDone, setAutoIndexingDone] = useState(false);
   
   // Browser state
   const [showBrowser, setShowBrowser] = useState(false);
@@ -258,6 +266,29 @@ export function IDE() {
       // Save to recent projects
       saveRecentProject(path);
       setRecentProjects(getRecentProjects());
+      
+      // Auto-index project in background
+      setAutoIndexingDone(false);
+      setIndexing(true);
+      setIndexStatus({ success: true, message: 'Индексируем проект...' });
+      
+      try {
+        const indexResult = await indexProject({ project_path: path });
+        setIndexStatus({
+          success: true,
+          message: `✓ ${indexResult.files_indexed} файлов проиндексировано`
+        });
+        setAutoIndexingDone(true);
+        // Show analysis suggestion after successful indexing
+        setShowAnalysisSuggestion(true);
+      } catch (indexErr) {
+        setIndexStatus({
+          success: false,
+          message: 'Индексация не удалась'
+        });
+      } finally {
+        setIndexing(false);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -735,6 +766,29 @@ export function IDE() {
     }
   }, [projectPath, analysisType, customQuestion]);
 
+  // Index project for RAG
+  const handleIndexProject = useCallback(async () => {
+    if (!projectPath || indexing) return;
+    
+    setIndexing(true);
+    setIndexStatus(null);
+    
+    try {
+      const result = await indexProject({ project_path: projectPath });
+      setIndexStatus({
+        success: true,
+        message: `✓ ${result.files_indexed} файлов, ${result.chunks_created} фрагментов`
+      });
+    } catch (err) {
+      setIndexStatus({
+        success: false,
+        message: err instanceof Error ? err.message : 'Ошибка индексации'
+      });
+    } finally {
+      setIndexing(false);
+    }
+  }, [projectPath, indexing]);
+
   const activeFileContent = openFiles.find(f => f.path === activeFile);
 
   return (
@@ -847,12 +901,52 @@ export function IDE() {
             </div>
           )}
           
-          {/* Project Stats */}
+          {/* Project Stats + Status */}
           {projectStats && (
-            <div className="mt-2 text-[10px] text-gray-500 flex gap-3">
-              <span className="flex items-center gap-1"><Folder size={10} strokeWidth={1.5} /> {projectStats.dirs}</span>
-              <span className="flex items-center gap-1"><File size={10} strokeWidth={1.5} /> {projectStats.files}</span>
-              <span className="flex items-center gap-1"><FileCode size={10} strokeWidth={1.5} /> {projectStats.code_files}</span>
+            <div className="mt-2 space-y-2">
+              <div className="text-[10px] text-gray-500 flex gap-3">
+                <span className="flex items-center gap-1"><Folder size={10} strokeWidth={1.5} /> {projectStats.dirs}</span>
+                <span className="flex items-center gap-1"><File size={10} strokeWidth={1.5} /> {projectStats.files}</span>
+                <span className="flex items-center gap-1"><FileCode size={10} strokeWidth={1.5} /> {projectStats.code_files}</span>
+              </div>
+              
+              {/* Auto-index status */}
+              {indexStatus && (
+                <div className={`px-2 py-1.5 text-[10px] rounded-lg flex items-center gap-2 ${
+                  indexing 
+                    ? 'bg-blue-900/30 text-blue-300 border border-blue-500/20'
+                    : indexStatus.success 
+                      ? 'bg-green-900/20 text-green-400 border border-green-500/20' 
+                      : 'bg-red-900/20 text-red-400 border border-red-500/20'
+                }`}>
+                  {indexing ? (
+                    <Loader2 size={10} className="animate-spin" />
+                  ) : indexStatus.success ? (
+                    <CircleCheck size={10} />
+                  ) : (
+                    <CircleX size={10} />
+                  )}
+                  <span className="flex-1">{indexStatus.message}</span>
+                  {/* Re-index button (subtle) */}
+                  {!indexing && autoIndexingDone && (
+                    <button
+                      onClick={handleIndexProject}
+                      className="text-gray-500 hover:text-blue-400 transition-colors"
+                      title="Переиндексировать"
+                    >
+                      <Database size={10} />
+                    </button>
+                  )}
+                </div>
+              )}
+              
+              {/* Analyzing status */}
+              {analyzing && (
+                <div className="px-2 py-1.5 text-[10px] rounded-lg flex items-center gap-2 bg-purple-900/30 text-purple-300 border border-purple-500/20">
+                  <Loader2 size={10} className="animate-spin" />
+                  <span>Анализируем проект...</span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -880,24 +974,9 @@ export function IDE() {
             <Plus size={14} strokeWidth={1.5} />
             <span>Новый файл</span>
           </button>
-          {projectTree && (
-            <button
-              data-analyze-trigger
-              onClick={handleAnalyze}
-              disabled={analyzing}
-              className={`w-full px-2 py-1.5 text-xs text-left rounded flex items-center gap-2 transition-all ${
-                analyzing 
-                  ? 'bg-purple-900/50 text-purple-200 cursor-wait' 
-                  : 'hover:bg-purple-900/30 text-purple-300'
-              }`}
-            >
-              {analyzing ? <Loader2 size={14} strokeWidth={1.5} className="animate-spin" /> : <Brain size={14} strokeWidth={1.5} />}
-              <span>{analyzing ? 'Анализируем...' : 'AI Анализ проекта'}</span>
-            </button>
-          )}
           {!projectTree && (
             <div className="px-2 py-1.5 text-[10px] text-gray-500 italic">
-              Откройте проект для анализа
+              Откройте проект для анализа и индексации
             </div>
           )}
         </div>
@@ -1390,6 +1469,46 @@ export function IDE() {
           <span>⚠️</span>
           <span className="text-sm">{error}</span>
           <button onClick={() => setError(null)} className="ml-2 hover:text-white">×</button>
+        </div>
+      )}
+      
+      {/* Smart Analysis Suggestion */}
+      {showAnalysisSuggestion && autoIndexingDone && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-in fade-in duration-300">
+          <div className="bg-gradient-to-br from-[#1a1d2e] to-[#131524] border border-purple-500/30 rounded-2xl shadow-2xl shadow-purple-500/20 p-6 max-w-md mx-4 animate-in zoom-in-95 duration-300">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-3 bg-purple-500/20 rounded-xl">
+                <Brain size={28} className="text-purple-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-white">Проект готов к работе!</h3>
+                <p className="text-sm text-gray-400">Индексация завершена</p>
+              </div>
+            </div>
+            
+            <p className="text-gray-300 text-sm mb-6">
+              Хотите выполнить AI-анализ проекта? Я изучу структуру, зависимости и дам рекомендации по улучшению.
+            </p>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowAnalysisSuggestion(false);
+                  handleAnalyze();
+                }}
+                className="flex-1 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white rounded-xl font-medium transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-600/30"
+              >
+                <Sparkles size={18} />
+                Да, анализировать
+              </button>
+              <button
+                onClick={() => setShowAnalysisSuggestion(false)}
+                className="px-4 py-2.5 bg-[#1f2236] hover:bg-[#2a2d42] text-gray-300 rounded-xl font-medium transition-all border border-[#2a2d42]"
+              >
+                Позже
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

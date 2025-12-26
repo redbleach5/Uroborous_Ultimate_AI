@@ -254,17 +254,17 @@ class ModelPerformanceTracker:
                     # Парсим JSON данные
                     try:
                         error_types = defaultdict(int, json.loads(error_types_json or "{}"))
-                    except:
+                    except (json.JSONDecodeError, TypeError):
                         error_types = defaultdict(int)
                     
                     try:
                         duration_history = json.loads(duration_history_json or "[]")
-                    except:
+                    except (json.JSONDecodeError, TypeError):
                         duration_history = []
                     
                     try:
                         tokens_per_sec_history = json.loads(tokens_per_sec_history_json or "[]")
-                    except:
+                    except (json.JSONDecodeError, TypeError):
                         tokens_per_sec_history = []
                     
                     # Парсим last_used
@@ -272,7 +272,7 @@ class ModelPerformanceTracker:
                     if last_used:
                         try:
                             last_used_dt = datetime.fromisoformat(last_used)
-                        except:
+                        except (ValueError, TypeError):
                             pass
                     
                     self.metrics[key] = ModelMetrics(

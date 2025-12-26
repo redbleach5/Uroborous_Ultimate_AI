@@ -12,6 +12,7 @@ logger = get_logger(__name__)
 
 from ..llm.providers import LLMProviderManager
 from ..llm.base import LLMMessage
+from .constants import ConfidenceThresholds
 
 
 # Предопределенные схемы классификации
@@ -249,12 +250,12 @@ JSON ответ:"""
                 result["type"] = valid_types[0] if valid_types else "unknown"
             
             # Нормализация confidence
-            confidence = result.get("confidence", 0.5)
+            confidence = result.get("confidence", ConfidenceThresholds.DEFAULT_CONFIDENCE)
             if isinstance(confidence, str):
                 try:
                     confidence = float(confidence)
-                except:
-                    confidence = 0.5
+                except (ValueError, TypeError):
+                    confidence = ConfidenceThresholds.DEFAULT_CONFIDENCE
             result["confidence"] = max(0.0, min(1.0, confidence))
             
             return result

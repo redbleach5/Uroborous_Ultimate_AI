@@ -187,11 +187,10 @@ class LongTermMemory:
             except Exception as e:
                 logger.warning(f"Failed to generate embedding: {e}")
         
-        # Save to database (using transaction for atomicity)
-        # Use explicit transaction context for better error handling
+        # Save to database
+        # Note: aiosqlite handles transactions automatically in isolation_level=None mode
+        # For explicit transaction control, we use execute with proper error handling
         try:
-            # Begin transaction explicitly
-            await self.db.execute("BEGIN TRANSACTION")
             await self.db.execute("""
                 INSERT INTO memories (task, solution, agent, metadata, embedding)
                 VALUES (?, ?, ?, ?, ?)
@@ -204,7 +203,11 @@ class LongTermMemory:
             ))
             await self.db.commit()
         except Exception as e:
-            await self.db.rollback()
+            # Rollback is automatic in aiosqlite on error, but we call it explicitly for safety
+            try:
+                await self.db.rollback()
+            except Exception:
+                pass  # Ignore rollback errors
             logger.error(f"Failed to save solution to memory: {e}")
             raise MemoryException(f"Failed to save solution: {e}") from e
         
@@ -307,11 +310,9 @@ class LongTermMemory:
         count = row[0] if row else 0
         
         if count > self.max_memories:
-            # Delete oldest AND lowest quality memories (using transaction for atomicity)
+            # Delete oldest AND lowest quality memories
             to_delete = count - self.max_memories
             try:
-                # Begin transaction explicitly
-                await self.db.execute("BEGIN TRANSACTION")
                 # Удаляем с учетом качества: сначала низкокачественные старые
                 await self.db.execute("""
                     DELETE FROM memories
@@ -324,9 +325,12 @@ class LongTermMemory:
                 await self.db.commit()
                 logger.info(f"Cleaned up {to_delete} old/low-quality memories")
             except Exception as e:
-                await self.db.rollback()
+                try:
+                    await self.db.rollback()
+                except Exception:
+                    pass  # Ignore rollback errors
                 logger.error(f"Failed to cleanup old memories: {e}")
-                raise MemoryException(f"Failed to cleanup old memories: {e}") from e
+                # Don't raise here - cleanup failure shouldn't break the main operation
     
     async def update_solution_feedback(
         self,

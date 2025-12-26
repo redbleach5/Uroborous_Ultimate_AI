@@ -266,11 +266,9 @@ class OllamaProvider(BaseLLMProvider):
         Returns:
             Имя модели для использования
         """
-        if model and model in self._available_models:
-            return model
-        
-        if model and not self._available_models:
-            # Если модели еще не загружены, возвращаем запрошенную
+        # Если модель передана явно - всегда использовать её (IntelligentModelRouter уже выбрал лучшую)
+        if model:
+            logger.debug(f"Using explicitly requested model: {model}")
             return model
         
         # Если нет доступных моделей, используем default
@@ -455,13 +453,28 @@ Show your reasoning process clearly. Think deeply before providing your final an
         thinking_mode: bool = False,
         **kwargs
     ) -> LLMResponse:
-        """Generate response from Ollama"""
+        """
+        Generate response from Ollama.
+        
+        Args:
+            messages: List of messages
+            model: Model name
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens
+            thinking_mode: Enable thinking mode
+            **kwargs: Additional parameters including:
+                - server_url: Override server URL for this request only (thread-safe)
+                - task_type: Type of task for smart model selection
+        """
         if not self.client:
             raise LLMException("Ollama client not initialized")
         
         # Performance tracking
         tracker = get_performance_tracker()
         start_time = time.time()
+        
+        # Extract server_url override (thread-safe: uses separate client for request)
+        server_url_override = kwargs.pop("server_url", None)
         
         # Check cache
         cache_key = self._get_cache_key(messages, model, temperature, **kwargs)
@@ -474,7 +487,7 @@ Show your reasoning process clearly. Think deeply before providing your final an
             )
         
         # Умный выбор модели на основе типа задачи
-        task_type = kwargs.get("task_type")  # code, chat, analysis, reasoning
+        task_type = kwargs.pop("task_type", None)  # code, chat, analysis, reasoning
         model_name = self._select_best_model(task_type=task_type, model=model)
         
         # Подготавливаем промпты для thinking mode
@@ -526,7 +539,25 @@ Show your reasoning process clearly. Think deeply before providing your final an
             if max_tokens:
                 request_data["options"]["num_predict"] = max_tokens
             
-            response = await self.client.post("/api/chat", json=request_data)
+            # Determine which client to use (thread-safe server override)
+            client_to_use = self.client
+            temp_client = None
+            effective_url = self.base_url
+            
+            if server_url_override and server_url_override != self.base_url:
+                # Create temporary client for this request only (thread-safe)
+                effective_url = server_url_override
+                temp_client = httpx.AsyncClient(
+                    base_url=server_url_override,
+                    timeout=self.timeout,
+                    limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+                )
+                client_to_use = temp_client
+                logger.debug(f"Using temporary client for server: {server_url_override}")
+            
+            logger.debug(f"Making Ollama request to {effective_url}/api/chat for model {model_name}")
+            response = await client_to_use.post("/api/chat", json=request_data)
+            logger.debug(f"Ollama response received: status={response.status_code}")
             response.raise_for_status()
             
             # Безопасный парсинг JSON с обработкой ошибок
@@ -665,7 +696,8 @@ Show your reasoning process clearly. Think deeply before providing your final an
                     "done": data.get("done", False) if data and isinstance(data, dict) else False,
                     "thinking_mode": thinking_mode,
                     "thinking_native": supports_native,  # Указываем, используется ли нативный thinking
-                    "thinking_emulated": thinking_mode and not supports_native  # Эмуляция только если не нативный
+                    "thinking_emulated": thinking_mode and not supports_native,  # Эмуляция только если не нативный
+                    "server_url": effective_url  # Какой сервер использовался
                 },
                 thinking=thinking_content,
                 has_thinking=thinking_content is not None
@@ -674,9 +706,12 @@ Show your reasoning process clearly. Think deeply before providing your final an
             # Пробуем fallback сервер при ошибках подключения
             logger.warning(f"Ollama request failed: {e}. Trying fallback server...")
             
-            if await self._try_next_server():
-                # Повторяем запрос на новом сервере (рекурсия с защитой)
-                logger.info("Retrying request on fallback server...")
+            # Limit recursion depth to prevent infinite loops
+            retry_count = kwargs.get("_retry_count", 0)
+            max_retries = 3
+            
+            if retry_count < max_retries and await self._try_next_server():
+                logger.info(f"Retrying request on fallback server (attempt {retry_count + 1}/{max_retries})...")
                 try:
                     return await self.generate(
                         messages=messages,
@@ -684,6 +719,7 @@ Show your reasoning process clearly. Think deeply before providing your final an
                         temperature=temperature,
                         max_tokens=max_tokens,
                         thinking_mode=thinking_mode,
+                        _retry_count=retry_count + 1,
                         **kwargs
                     )
                 except Exception as retry_error:
@@ -704,8 +740,13 @@ Show your reasoning process clearly. Think deeply before providing your final an
             # Для других ошибок также пробуем fallback
             if "connect" in str(e).lower() or "timeout" in str(e).lower():
                 logger.warning(f"Connection error: {e}. Trying fallback server...")
-                if await self._try_next_server():
-                    logger.info("Retrying request on fallback server...")
+                
+                # Limit recursion depth
+                retry_count = kwargs.get("_retry_count", 0)
+                max_retries = 3
+                
+                if retry_count < max_retries and await self._try_next_server():
+                    logger.info(f"Retrying request on fallback server (attempt {retry_count + 1}/{max_retries})...")
                     try:
                         return await self.generate(
                             messages=messages,
@@ -713,6 +754,7 @@ Show your reasoning process clearly. Think deeply before providing your final an
                             temperature=temperature,
                             max_tokens=max_tokens,
                             thinking_mode=thinking_mode,
+                            _retry_count=retry_count + 1,
                             **kwargs
                         )
                     except Exception as retry_error:
@@ -729,6 +771,13 @@ Show your reasoning process clearly. Think deeply before providing your final an
                 error_type=type(e).__name__
             )
             raise LLMException(f"Ollama error: {e}") from e
+        finally:
+            # Always close temporary client to prevent resource leaks
+            if temp_client is not None:
+                try:
+                    await temp_client.aclose()
+                except Exception as close_error:
+                    logger.debug(f"Error closing temporary client: {close_error}")
     
     async def stream(
         self,
@@ -781,7 +830,7 @@ Show your reasoning process clearly. Think deeply before providing your final an
                                     data = json.loads(json_match.group())
                                     if "message" in data and "content" in data["message"]:
                                         yield data["message"]["content"]
-                                except:
+                                except (json.JSONDecodeError, KeyError, TypeError):
                                     # Если не получилось, пропускаем строку
                                     continue
                             else:

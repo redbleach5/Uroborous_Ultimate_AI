@@ -178,7 +178,7 @@ class SmartProjectAnalyzer:
                             try:
                                 lines = item.read_text(encoding='utf-8', errors='ignore').count('\n') + 1
                                 total_lines += lines
-                            except:
+                            except (OSError, PermissionError):
                                 pass
             except PermissionError:
                 pass
@@ -223,7 +223,7 @@ class SmartProjectAnalyzer:
                     frameworks.append('Next.js')
                 if 'express' in deps:
                     frameworks.append('Express')
-            except:
+            except (OSError, json.JSONDecodeError, KeyError):
                 pass
         
         if (path / 'requirements.txt').exists():
@@ -239,7 +239,7 @@ class SmartProjectAnalyzer:
                     frameworks.append('PyTorch')
                 if 'tensorflow' in reqs.lower():
                     frameworks.append('TensorFlow')
-            except:
+            except (OSError, UnicodeDecodeError):
                 pass
         
         # Ключевые файлы
@@ -337,7 +337,7 @@ class SmartProjectAnalyzer:
             try:
                 content = file_path.read_text(encoding='utf-8')[:5000]
                 context["key_files"][key_file] = content
-            except:
+            except (OSError, PermissionError, UnicodeDecodeError):
                 pass
         
         # 2. Собираем структуру и код
@@ -356,7 +356,7 @@ class SmartProjectAnalyzer:
                     elif item.suffix.lower() in self.CODE_EXTENSIONS:
                         context["structure"].append(f"{'  ' * depth}📄 {item.name}")
                         code_files.append(item)
-            except:
+            except (OSError, PermissionError):
                 pass
         
         collect_files(path)
@@ -378,7 +378,7 @@ class SmartProjectAnalyzer:
                 if len(content) > len(truncated):
                     truncated += f"\n... (ещё {len(content) - len(truncated)} символов)"
                 context["files_content"][str(code_file.relative_to(path))] = truncated
-            except:
+            except (OSError, PermissionError, UnicodeDecodeError):
                 pass
         
         # 4. Git информация
@@ -466,10 +466,10 @@ class SmartProjectAnalyzer:
             results = []
             for query in queries[:strategy["rag_queries"]]:
                 try:
-                    search_result = await self.vector_store.search(query, k=3)
+                    search_result = await self.vector_store.search(query, top_k=3)
                     if search_result:
                         results.extend(search_result)
-                except:
+                except (ValueError, RuntimeError, KeyError):
                     pass
             
             if results:

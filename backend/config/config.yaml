@@ -24,9 +24,7 @@ llm:
       enabled: true
       base_url: http://192.168.178.126:11434
       additional_servers:
-      - name: gpu_server
-        url: http://192.168.178.126:11434
-        priority: PRIMARY
+      # gpu_server is same as base_url, so only add localhost as fallback
       - name: localhost
         url: http://localhost:11434
         priority: SECONDARY
@@ -38,7 +36,8 @@ llm:
       auto_detect_models: true
       # Модели выбираются автоматически IntelligentModelRouter
       # на основе возможностей модели и метрик производительности
-      default_model: gemma3
+      # Используем llama3.2:3b - доступна на обоих серверах
+      default_model: llama3.2:3b
 rag:
   enabled: true
   vector_store:

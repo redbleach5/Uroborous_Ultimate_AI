@@ -14,13 +14,18 @@ from ..core.exceptions import ToolException
 from ..safety.guard import SafetyGuard
 
 
-# Try to use duckduckgo-search library (more reliable than HTML scraping)
+# Try to use ddgs library (renamed from duckduckgo-search)
 try:
     from duckduckgo_search import DDGS
     HAS_DDGS = True
 except ImportError:
-    HAS_DDGS = False
-    logger.warning("duckduckgo-search not installed. Install with: pip install duckduckgo-search")
+    try:
+        # Try new package name
+        from ddgs import DDGS
+        HAS_DDGS = True
+    except ImportError:
+        HAS_DDGS = False
+        logger.warning("ddgs not installed. Install with: pip install ddgs")
 
 
 class WebSearchTool(BaseTool):
@@ -33,6 +38,62 @@ class WebSearchTool(BaseTool):
             safety_guard=safety_guard
         )
         self.client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
+    
+    async def shutdown(self) -> None:
+        """Close HTTP client to prevent resource leaks"""
+        if self.client:
+            await self.client.aclose()
+    
+    def _filter_relevant_results(self, results: List[Dict[str, Any]], query: str) -> List[Dict[str, Any]]:
+        """
+        Filter search results for relevance to the query.
+        
+        Removes results that don't match the query language or topic.
+        
+        Args:
+            results: List of search results
+            query: Original search query
+            
+        Returns:
+            Filtered list of relevant results
+        """
+        if not results:
+            return results
+        
+        # Extract query words (remove common stop words)
+        stop_words_ru = {'и', 'в', 'на', 'с', 'по', 'для', 'как', 'что', 'это', 'а', 'не', 'о', 'к', 'из'}
+        stop_words_en = {'the', 'a', 'an', 'in', 'on', 'at', 'for', 'to', 'of', 'is', 'and', 'or', 'how', 'what'}
+        
+        query_words = set(query.lower().split())
+        query_words = query_words - stop_words_ru - stop_words_en
+        
+        # Check if query is in Russian
+        is_russian_query = any('\u0400' <= c <= '\u04FF' for c in query)
+        
+        filtered = []
+        for result in results:
+            title = result.get('title', '').lower()
+            snippet = result.get('snippet', '').lower()
+            combined_text = f"{title} {snippet}"
+            
+            # Check if result contains any query words
+            result_words = set(combined_text.split())
+            common_words = query_words & result_words
+            
+            # Calculate relevance score
+            relevance_score = len(common_words) / max(len(query_words), 1)
+            
+            # For Russian queries, prefer Russian results
+            is_russian_result = any('\u0400' <= c <= '\u04FF' for c in combined_text)
+            
+            # Keep result if:
+            # 1. It has at least 1 matching word (20% overlap), OR
+            # 2. Language matches query language
+            if relevance_score >= 0.2 or (is_russian_query == is_russian_result and len(combined_text) > 50):
+                filtered.append(result)
+        
+        # If filtering removed all results, return original (better than nothing)
+        return filtered if filtered else results
     
     async def _search_with_ddgs(self, query: str, max_results: int = 10) -> List[Dict[str, Any]]:
         """
@@ -49,10 +110,22 @@ class WebSearchTool(BaseTool):
             return []
         
         try:
-            # Run sync DDGS in executor to not block async loop
+            # Check if query contains technical/price terms
+            tech_keywords = ['rtx', 'gtx', 'nvidia', 'amd', 'intel', 'cpu', 'gpu', 'ram', 'ddr', 'ssd', 'price', 'цена', 'стоит', 'стоимость']
+            is_tech_query = any(kw in query.lower() for kw in tech_keywords)
+            
+            # For tech queries, try English search first for better results
             def do_search():
                 with DDGS() as ddgs:
-                    results = list(ddgs.text(query, region='ru-ru', max_results=max_results))
+                    # For tech/price queries, search without region restriction first
+                    if is_tech_query:
+                        # Try international search first
+                        results = list(ddgs.text(query, max_results=max_results))
+                        if not results:
+                            # Fallback to Russian region
+                            results = list(ddgs.text(query, region='ru-ru', max_results=max_results))
+                    else:
+                        results = list(ddgs.text(query, region='ru-ru', max_results=max_results))
                     return results
             
             loop = asyncio.get_event_loop()
@@ -67,6 +140,19 @@ class WebSearchTool(BaseTool):
                 })
             
             logger.info(f"DDGS search returned {len(results)} results for: {query[:50]}")
+            
+            # Filter results for relevance - remove non-relevant results
+            if results:
+                filtered_results = self._filter_relevant_results(results, query)
+                if filtered_results:
+                    results = filtered_results
+                    logger.debug(f"Filtered to {len(results)} relevant results")
+            
+            # Debug: log first result content
+            if results:
+                first = results[0]
+                logger.debug(f"First result: title='{first.get('title', '')[:50]}', snippet='{first.get('snippet', '')[:100]}...'")
+            
             return results
             
         except Exception as e:
@@ -243,6 +329,11 @@ class APICallTool(BaseTool):
             safety_guard=safety_guard
         )
         self.client = httpx.AsyncClient(timeout=30.0)
+    
+    async def shutdown(self) -> None:
+        """Close HTTP client to prevent resource leaks"""
+        if self.client:
+            await self.client.aclose()
     
     async def execute(self, input_data: Dict[str, Any]) -> ToolOutput:
         """Make API call"""

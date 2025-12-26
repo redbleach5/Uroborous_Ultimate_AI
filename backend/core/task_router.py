@@ -13,6 +13,7 @@ logger = get_logger(__name__)
 from ..llm.providers import LLMProviderManager
 from ..llm.base import LLMMessage
 from .llm_classifier import LLMClassifier, REQUEST_TYPE_SCHEMA
+from .constants import ConfidenceThresholds, ComplexityThresholds
 
 
 @dataclass
@@ -22,7 +23,7 @@ class TaskRouting:
     complexity: str  # "low", "medium", "high"
     task_type: str  # "simple_chat", "code_generation", "reasoning", etc.
     selected_provider: Optional[str] = None
-    confidence: float = 0.5
+    confidence: float = ConfidenceThresholds.DEFAULT_CONFIDENCE
     reason: str = ""
 
 

@@ -9,6 +9,7 @@
 
 import re
 import asyncio
+import threading
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Tuple
 from enum import Enum
@@ -16,6 +17,10 @@ import httpx
 
 from .logger import get_logger
 from .model_performance_tracker import get_performance_tracker, ModelPerformanceTracker
+from .constants import (
+    CapabilityThresholds, ScoringWeights, PerformanceThresholds,
+    ModelAdjustments, Timeouts
+)
 
 logger = get_logger(__name__)
 
@@ -90,44 +95,44 @@ class ModelProfile:
         
         # Кодовые модели
         if any(kw in name_lower for kw in ['coder', 'code', 'deepseek-coder', 'stable-code']):
-            caps[ModelCapability.CODE_GENERATION] = 0.9
-            caps[ModelCapability.INSTRUCTION_FOLLOWING] = 0.8
+            caps[ModelCapability.CODE_GENERATION] = CapabilityThresholds.HIGH_CAPABILITY
+            caps[ModelCapability.INSTRUCTION_FOLLOWING] = CapabilityThresholds.HIGH_QUALITY_MIN
         
         # Модели для рассуждений
         if any(kw in name_lower for kw in ['r1', 'reasoning', 'think']):
-            caps[ModelCapability.REASONING] = 0.9
+            caps[ModelCapability.REASONING] = CapabilityThresholds.HIGH_CAPABILITY
         
         # Быстрые маленькие модели
-        if size_b <= 3:
-            caps[ModelCapability.FAST_RESPONSE] = 0.9
-        elif size_b <= 7:
-            caps[ModelCapability.FAST_RESPONSE] = 0.6
+        if size_b <= CapabilityThresholds.SMALL_MODEL_MAX_SIZE:
+            caps[ModelCapability.FAST_RESPONSE] = CapabilityThresholds.HIGH_CAPABILITY
+        elif size_b <= CapabilityThresholds.MEDIUM_MODEL_MAX_SIZE:
+            caps[ModelCapability.FAST_RESPONSE] = CapabilityThresholds.MEDIUM_CAPABILITY - 0.1
         
         # Gemma хороша для многоязычности и инструкций
         if 'gemma' in name_lower:
-            caps[ModelCapability.MULTILINGUAL] = 0.85
-            caps[ModelCapability.INSTRUCTION_FOLLOWING] = 0.85
+            caps[ModelCapability.MULTILINGUAL] = CapabilityThresholds.GOOD_CAPABILITY
+            caps[ModelCapability.INSTRUCTION_FOLLOWING] = CapabilityThresholds.GOOD_CAPABILITY
             if size_b >= 4:
-                caps[ModelCapability.FACTUAL] = 0.8
+                caps[ModelCapability.FACTUAL] = CapabilityThresholds.HIGH_QUALITY_MIN
         
         # Qwen - хороший универсал
         if 'qwen' in name_lower:
-            caps[ModelCapability.MULTILINGUAL] = 0.9
-            caps[ModelCapability.INSTRUCTION_FOLLOWING] = 0.85
-            if size_b >= 7:
+            caps[ModelCapability.MULTILINGUAL] = CapabilityThresholds.HIGH_CAPABILITY
+            caps[ModelCapability.INSTRUCTION_FOLLOWING] = CapabilityThresholds.GOOD_CAPABILITY
+            if size_b >= CapabilityThresholds.MEDIUM_MODEL_MAX_SIZE:
                 caps[ModelCapability.REASONING] = 0.75
-                caps[ModelCapability.FACTUAL] = 0.8
+                caps[ModelCapability.FACTUAL] = CapabilityThresholds.HIGH_QUALITY_MIN
         
         # Llama - хороший английский, средний русский
         if 'llama' in name_lower:
-            caps[ModelCapability.REASONING] = 0.7
+            caps[ModelCapability.REASONING] = CapabilityThresholds.MEDIUM_CAPABILITY
             if size_b >= 8:
-                caps[ModelCapability.LONG_CONTEXT] = 0.8
+                caps[ModelCapability.LONG_CONTEXT] = CapabilityThresholds.HIGH_QUALITY_MIN
         
         # Большие модели лучше в качестве
-        if size_b >= 14:
-            caps[ModelCapability.REASONING] = max(caps.get(ModelCapability.REASONING, 0), 0.85)
-            caps[ModelCapability.FACTUAL] = max(caps.get(ModelCapability.FACTUAL, 0), 0.85)
+        if size_b >= CapabilityThresholds.LARGE_MODEL_MIN_SIZE:
+            caps[ModelCapability.REASONING] = max(caps.get(ModelCapability.REASONING, 0), CapabilityThresholds.GOOD_CAPABILITY)
+            caps[ModelCapability.FACTUAL] = max(caps.get(ModelCapability.FACTUAL, 0), CapabilityThresholds.GOOD_CAPABILITY)
         
         return caps
 
@@ -231,17 +236,34 @@ class IntelligentModelRouter:
         
         # Веса для скоринга (могут адаптироваться)
         self.scoring_weights = {
-            "capability": 0.35,
-            "performance": 0.30,
-            "speed": 0.20,
-            "quality": 0.15
+            "capability": ScoringWeights.CAPABILITY,
+            "performance": ScoringWeights.PERFORMANCE,
+            "speed": ScoringWeights.SPEED,
+            "quality": ScoringWeights.QUALITY
         }
         
+        # Configurable discovery settings
+        ollama_config = config.get("llm", {}).get("providers", {}).get("ollama", {})
         self._last_discovery = 0
-        self._discovery_interval = 30  # секунд
-        self._timeout = 2.0
+        self._discovery_interval = ollama_config.get("discovery_interval", Timeouts.DISCOVERY_INTERVAL)
+        self._timeout = ollama_config.get("discovery_timeout", Timeouts.DISCOVERY_TIMEOUT)
+        
+        # Thread-safe discovery with asyncio.Lock
+        self._discovery_lock: Optional[asyncio.Lock] = None
+        self._init_lock = threading.Lock()  # For thread-safe lazy init of asyncio.Lock
         
         self._initialize_from_config()
+    
+    def _get_discovery_lock(self) -> asyncio.Lock:
+        """Lazy initialization of discovery lock (must be created in event loop)
+        
+        Thread-safe: uses threading.Lock to prevent race conditions during
+        asyncio.Lock creation from multiple threads.
+        """
+        with self._init_lock:
+            if self._discovery_lock is None:
+                self._discovery_lock = asyncio.Lock()
+        return self._discovery_lock
     
     def _initialize_from_config(self):
         """Инициализация серверов из конфига"""
@@ -267,44 +289,52 @@ class IntelligentModelRouter:
             }
     
     async def discover_servers(self):
-        """Обнаружение серверов и их моделей"""
+        """
+        Обнаружение серверов и их моделей.
+        
+        Thread-safe: использует asyncio.Lock для предотвращения race conditions.
+        """
         import time
-        current_time = time.time()
+        lock = self._get_discovery_lock()
         
-        if current_time - self._last_discovery < self._discovery_interval:
-            return
-        
-        self._last_discovery = current_time
-        
-        async def check_server(name: str, info: Dict):
-            try:
-                async with httpx.AsyncClient(timeout=self._timeout) as client:
-                    start = time.time()
-                    response = await client.get(f"{info['url']}/api/tags")
-                    elapsed = (time.time() - start) * 1000
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        models = [m["name"] for m in data.get("models", [])]
+        async with lock:
+            current_time = time.time()
+            
+            # Проверяем кэш внутри lock
+            if current_time - self._last_discovery < self._discovery_interval:
+                return
+            
+            async def check_server(name: str, info: Dict):
+                try:
+                    async with httpx.AsyncClient(timeout=self._timeout) as client:
+                        start = time.time()
+                        response = await client.get(f"{info['url']}/api/tags")
+                        elapsed = (time.time() - start) * 1000
                         
-                        info["models"] = models
-                        info["is_available"] = True
-                        info["response_time_ms"] = elapsed
-                        
-                        # Создаём профили для новых моделей
-                        for model in models:
-                            if model not in self._model_profiles:
-                                self._model_profiles[model] = ModelProfile.from_model_name(model)
-                        
-                        logger.debug(f"Server {name}: {len(models)} models, {elapsed:.0f}ms")
-            except Exception as e:
-                info["is_available"] = False
-                logger.debug(f"Server {name} unavailable: {e}")
-        
-        await asyncio.gather(*[
-            check_server(name, info) 
-            for name, info in self._servers.items()
-        ])
+                        if response.status_code == 200:
+                            data = response.json()
+                            models = [m["name"] for m in data.get("models", [])]
+                            
+                            info["models"] = models
+                            info["is_available"] = True
+                            info["response_time_ms"] = elapsed
+                            
+                            # Создаём профили для новых моделей
+                            for model in models:
+                                if model not in self._model_profiles:
+                                    self._model_profiles[model] = ModelProfile.from_model_name(model)
+                            
+                            logger.debug(f"Server {name}: {len(models)} models, {elapsed:.0f}ms")
+                except Exception as e:
+                    info["is_available"] = False
+                    logger.debug(f"Server {name} unavailable: {e}")
+            
+            await asyncio.gather(*[
+                check_server(name, info) 
+                for name, info in self._servers.items()
+            ])
+            
+            self._last_discovery = current_time
     
     def _get_model_profile(self, model_name: str) -> ModelProfile:
         """Получает или создаёт профиль модели"""
@@ -319,25 +349,25 @@ class IntelligentModelRouter:
     ) -> float:
         """Вычисляет соответствие возможностей модели требованиям"""
         if not requirements.required_capabilities:
-            return 0.7  # Нет требований = средний балл
+            return CapabilityThresholds.MEDIUM_CAPABILITY  # Нет требований = средний балл
         
         scores = []
         for cap, required_level in requirements.required_capabilities.items():
-            model_level = profile.capabilities.get(cap, 0.3)  # По умолчанию низкий
+            model_level = profile.capabilities.get(cap, CapabilityThresholds.LOW_CAPABILITY)
             # Насколько модель покрывает требование
             coverage = min(1.0, model_level / max(required_level, 0.1))
             scores.append(coverage)
         
-        return sum(scores) / len(scores) if scores else 0.5
+        return sum(scores) / len(scores) if scores else CapabilityThresholds.DEFAULT_CAPABILITY
     
     def _get_performance_score(self, model_name: str, provider: str = "ollama") -> float:
         """Получает историческую производительность модели"""
         metrics = self.performance_tracker.get_metrics(provider, model_name)
         
-        if metrics.total_requests < 3:
+        if metrics.total_requests < PerformanceThresholds.MIN_REQUESTS_FOR_METRICS:
             # Недостаточно данных - используем эвристику
             profile = self._get_model_profile(model_name)
-            return profile.quality_score * 0.8  # Чуть ниже чем теоретическое
+            return profile.quality_score * CapabilityThresholds.HIGH_QUALITY_MIN
         
         # Используем реальные метрики
         success_rate = metrics.successful_requests / max(metrics.total_requests, 1)
@@ -345,7 +375,8 @@ class IntelligentModelRouter:
         # Нормализуем performance_score
         normalized_perf = min(1.0, metrics.performance_score / 100)
         
-        return (success_rate * 0.6 + normalized_perf * 0.4)
+        return (success_rate * PerformanceThresholds.SUCCESS_RATE_WEIGHT + 
+                normalized_perf * PerformanceThresholds.PERFORMANCE_WEIGHT)
     
     def _calculate_speed_score(
         self, 
@@ -357,7 +388,7 @@ class IntelligentModelRouter:
         base_speed = profile.base_speed_score
         
         # Корректируем на время отклика сервера
-        server_factor = max(0.5, 1.0 - (server_response_time / 500))  # 500ms = снижение до 0.5
+        server_factor = max(0.5, 1.0 - (server_response_time / PerformanceThresholds.ACCEPTABLE_RESPONSE_TIME))
         
         return base_speed * server_factor
     
@@ -403,10 +434,10 @@ class IntelligentModelRouter:
                 if requirements.prefer_speed:
                     # Для быстрых задач увеличиваем вес скорости
                     total_score = (
-                        capability_score * 0.2 +
-                        performance_score * 0.2 +
-                        speed_score * 0.5 +
-                        quality_score * 0.1
+                        capability_score * ScoringWeights.SPEED_PREFERRED_CAPABILITY +
+                        performance_score * ScoringWeights.SPEED_PREFERRED_PERFORMANCE +
+                        speed_score * ScoringWeights.SPEED_PREFERRED_SPEED +
+                        quality_score * ScoringWeights.SPEED_PREFERRED_QUALITY
                     )
                 else:
                     total_score = (
@@ -418,14 +449,26 @@ class IntelligentModelRouter:
                 
                 # Бонус для предпочитаемой модели
                 if preferred_model and model_name == preferred_model:
-                    total_score *= 1.1
+                    total_score *= ModelAdjustments.PREFERRED_MODEL_BONUS
+                
+                # Штраф для qwen моделей в не-кодовых задачах (склонны переключаться на китайский)
+                model_lower = model_name.lower()
+                is_qwen_non_coder = 'qwen' in model_lower and 'coder' not in model_lower
+                is_code_task = task_type in ['code', 'ide']
+                if is_qwen_non_coder and not is_code_task:
+                    total_score *= ModelAdjustments.QWEN_NON_CODER_PENALTY
+                    logger.debug(f"Applied penalty to {model_name} (qwen non-coder in non-code task)")
+                
+                # Бонус для gemma в русскоязычных чат/research задачах
+                if 'gemma' in model_lower and task_type in ['chat', 'research', 'general']:
+                    total_score *= ModelAdjustments.GEMMA_CHAT_BONUS
                 
                 reason_parts = []
-                if capability_score > 0.7:
+                if capability_score > CapabilityThresholds.MEDIUM_CAPABILITY:
                     reason_parts.append("good capabilities")
-                if performance_score > 0.7:
+                if performance_score > CapabilityThresholds.MEDIUM_CAPABILITY:
                     reason_parts.append("proven performance")
-                if speed_score > 0.7:
+                if speed_score > CapabilityThresholds.MEDIUM_CAPABILITY:
                     reason_parts.append("fast")
                 
                 candidates.append(ScoredModel(

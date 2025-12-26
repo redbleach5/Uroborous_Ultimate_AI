@@ -99,8 +99,8 @@ class ProgressTracker:
             for queue in self.listeners:
                 try:
                     await queue.put(event)
-                except:
-                    pass
+                except asyncio.QueueFull:
+                    pass  # Пропускаем если очередь переполнена
         
         logger.debug(f"[Progress:{self.operation_id}] {stage}: {message} ({progress*100:.0f}%)")
     

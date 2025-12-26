@@ -24,7 +24,7 @@ from .metrics import metrics_collector
 from .batch_processor import BatchProcessor
 from .intelligent_monitor import get_monitor, initialize_monitor, IssueSeverity
 from .pydantic_utils import pydantic_to_dict
-from .learning_system import get_learning_system, initialize_learning_system
+from .learning_system import get_learning_system, initialize_learning_system, LearningSystem
 from .resource_aware_selector import ResourceAwareSelector
 from .easter_eggs import startup_birthday_check
 
@@ -57,7 +57,7 @@ class IDAEngine:
         self.safety_guard: Optional[SafetyGuard] = None
         self.memory: Optional[LongTermMemory] = None
         self.batch_processor: Optional[BatchProcessor] = None
-        self.learning_system = None  # Will be initialized in initialize()
+        self.learning_system: Optional[LearningSystem] = None
         self.resource_aware_selector: Optional[ResourceAwareSelector] = None
         
         # Сохраняем raw config для передачи в компоненты

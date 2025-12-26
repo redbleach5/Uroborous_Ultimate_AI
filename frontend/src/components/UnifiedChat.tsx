@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { executeTask, processBatchTasks, sendChat, ChatMessage as APIChatMessage } from '../api/client';
-import { useChatStore, ChatMode } from '../state/chatStore';
+import { useChatStore, ChatMode, FeedbackData } from '../state/chatStore';
 import { useExecutionInfo } from '../state/executionContext';
 import {
-  MessageSquare, Bot, Zap, ChevronDown, CircleCheck, FileText
+  MessageSquare, Bot, Zap, ChevronDown, CircleCheck, FileText, Wifi, WifiOff
 } from 'lucide-react';
 
 // Import new components
@@ -12,6 +12,8 @@ import { ChatMessage as MessageType } from '../state/chatStore';
 import { useCodeExecutor } from './CodeExecutor';
 import { useModelSelector, ModelSelectorDropdown } from './ModelSelector';
 import { ConversationSidebar, useSidebar, ModeInfo, Conversation } from './ConversationSidebar';
+import { useWebSocket, ProgressUpdate } from '../hooks/useWebSocket';
+import { InlineProgress } from './ProgressIndicator';
 
 // ============ Constants ============
 
@@ -74,6 +76,43 @@ export function UnifiedChat() {
   const codeExecutor = useCodeExecutor();
   const modelSelector = useModelSelector();
   const sidebar = useSidebar();
+  
+  // WebSocket for real-time progress (optional enhancement)
+  const [wsProgress, setWsProgress] = useState<ProgressUpdate | null>(null);
+  const [wsEnabled, setWsEnabled] = useState(() => {
+    return localStorage.getItem('wsEnabled') === 'true';
+  });
+  
+  const handleWsProgress = useCallback((progress: ProgressUpdate) => {
+    setWsProgress(progress);
+    // Автоматически скрываем через 2 секунды после завершения
+    if (progress.stage === 'completed' || progress.stage === 'error') {
+      setTimeout(() => setWsProgress(null), 2000);
+    }
+  }, []);
+  
+  const {
+    isConnected: wsConnected,
+    connect: wsConnect,
+    disconnect: wsDisconnect,
+  } = useWebSocket({
+    autoConnect: wsEnabled,
+    onProgress: handleWsProgress,
+    onError: (err) => console.warn('[WS Error]', err),
+  });
+  
+  // Toggle WebSocket connection
+  const toggleWebSocket = useCallback(() => {
+    const newState = !wsEnabled;
+    setWsEnabled(newState);
+    localStorage.setItem('wsEnabled', String(newState));
+    if (newState) {
+      wsConnect();
+    } else {
+      wsDisconnect();
+      setWsProgress(null);
+    }
+  }, [wsEnabled, wsConnect, wsDisconnect]);
 
   const {
     conversations,
@@ -151,6 +190,12 @@ export function UnifiedChat() {
 
   const handleModeChange = (mode: ChatMode) => {
     setCurrentMode(mode);
+  };
+
+  const handleFeedbackSubmit = (messageId: string, feedback: FeedbackData) => {
+    if (currentId) {
+      updateMessage(currentId, messageId, { feedback });
+    }
   };
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -485,9 +530,16 @@ export function UnifiedChat() {
                     executionResult={codeExecutor.executionResults[message.id]}
                     onRunCode={handleRunCode}
                     onDownloadCode={codeExecutor.downloadCode}
+                    onFeedbackSubmit={message.role === 'assistant' ? handleFeedbackSubmit : undefined}
                   />
                 ))
               )}
+              
+              {/* Real-time progress indicator */}
+              {wsProgress && isLoading && (
+                <InlineProgress progress={wsProgress} />
+              )}
+              
               <div ref={messagesEndRef} />
             </div>
           </div>
@@ -514,6 +566,9 @@ export function UnifiedChat() {
           inputRef={inputRef}
           agents={AGENTS}
           modeInfo={MODE_INFO}
+          wsConnected={wsConnected}
+          wsEnabled={wsEnabled}
+          onToggleWebSocket={toggleWebSocket}
         />
       </div>
     </div>
@@ -598,6 +653,10 @@ interface InputAreaProps {
   inputRef: React.RefObject<HTMLTextAreaElement>;
   agents: typeof AGENTS;
   modeInfo: Record<ChatMode, ModeInfo>;
+  // WebSocket props
+  wsConnected?: boolean;
+  wsEnabled?: boolean;
+  onToggleWebSocket?: () => void;
 }
 
 const InputArea: React.FC<InputAreaProps> = ({
@@ -620,6 +679,9 @@ const InputArea: React.FC<InputAreaProps> = ({
   inputRef,
   agents,
   modeInfo,
+  wsConnected,
+  wsEnabled,
+  onToggleWebSocket,
 }) => {
   const ModeIcon = modeInfo[currentMode].icon;
   
@@ -745,6 +807,24 @@ const InputArea: React.FC<InputAreaProps> = ({
               rows={1}
               disabled={isLoading}
             />
+
+            {/* WebSocket Toggle */}
+            {onToggleWebSocket && (
+              <button
+                type="button"
+                onClick={onToggleWebSocket}
+                className={`px-2 py-2.5 h-full bg-transparent hover:bg-[#1f2236] transition-all duration-200 flex items-center justify-center flex-shrink-0 border-l border-[#1f2236] ${
+                  wsEnabled ? (wsConnected ? 'text-green-400' : 'text-yellow-400') : 'text-gray-500'
+                }`}
+                title={wsEnabled ? (wsConnected ? 'WebSocket подключен (отключить)' : 'WebSocket подключается...') : 'Включить real-time прогресс'}
+              >
+                {wsEnabled ? (
+                  <Wifi size={14} strokeWidth={1.5} className={wsConnected ? '' : 'animate-pulse'} />
+                ) : (
+                  <WifiOff size={14} strokeWidth={1.5} />
+                )}
+              </button>
+            )}
 
             {/* Submit Button */}
             <button

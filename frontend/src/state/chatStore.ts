@@ -17,6 +17,12 @@ export interface ReflectionData {
   timestamp?: string;
 }
 
+export interface FeedbackData {
+  rating: 'positive' | 'negative' | null;
+  submitted: boolean;
+  comment?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
@@ -27,6 +33,7 @@ export interface ChatMessage {
   subtasks?: Array<{ subtask: string; status: string; result?: any }>;
   thinking?: string; // Thinking/reasoning trace
   reflection?: ReflectionData; // Agent reflection/self-correction data
+  feedback?: FeedbackData; // User feedback for learning system
   metadata?: {
     provider?: string;
     model?: string;

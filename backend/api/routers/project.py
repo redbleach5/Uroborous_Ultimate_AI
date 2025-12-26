@@ -125,7 +125,7 @@ def get_file_info(path: Path, base_path: Path, max_depth: int, current_depth: in
             extension = path.suffix.lower() if path.suffix else None
             try:
                 size = path.stat().st_size
-            except:
+            except (OSError, PermissionError):
                 size = 0
             
             return FileInfo(
@@ -296,7 +296,7 @@ async def read_file(request: FileReadRequest, req: Request) -> Dict[str, Any]:
     except UnicodeDecodeError:
         try:
             content = file_path.read_text(encoding='latin-1')
-        except:
+        except (OSError, PermissionError, UnicodeDecodeError):
             return {
                 "success": True,
                 "path": str(file_path),
@@ -556,7 +556,7 @@ async def _simple_analyze_project(engine, project_path: Path, request: ProjectAn
                 content = file_path.read_text(encoding='utf-8')[:5000]
                 context_parts.append(f"=== {file_name} ===\n{content}\n")
                 files_analyzed.append(file_name)
-            except:
+            except (OSError, PermissionError, UnicodeDecodeError):
                 pass
     
     # Сканируем код
@@ -574,7 +574,7 @@ async def _simple_analyze_project(engine, project_path: Path, request: ProjectAn
             rel_path = code_file.relative_to(project_path)
             context_parts.append(f"\n=== {rel_path} ===\n{truncated}")
             files_analyzed.append(str(rel_path))
-        except:
+        except (OSError, PermissionError, UnicodeDecodeError):
             pass
     
     task = f"""Проанализируй проект {project_path.name}:
@@ -612,7 +612,7 @@ async def index_project(request: Request, index_request: Dict[str, Any]):
         # Validate input
         validated = validate_project_index_input(index_request)
         
-        from ..project.indexer import ProjectIndexer
+        from backend.project.indexer import ProjectIndexer
         
         indexer = ProjectIndexer(engine.vector_store)
         result = await indexer.index_project(

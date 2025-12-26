@@ -11,8 +11,14 @@ from datetime import datetime
 from backend.core.logger import get_logger
 from backend.llm.base import LLMMessage
 from backend.core.easter_eggs import check_easter_egg_trigger, get_birthday_greeting
+from backend.core.constants import Timeouts
 
 logger = get_logger(__name__)
+
+# Константы для управления историей чата
+MAX_RECENT_MESSAGES = 15  # Сообщений, которые передаются полностью
+SUMMARIZE_THRESHOLD = 20  # При превышении начинаем суммировать
+MAX_SUMMARY_TOKENS = 500  # Максимум токенов для суммирования старых сообщений
 
 router = APIRouter()
 
@@ -44,9 +50,10 @@ class ChatResponse(BaseModel):
 SYSTEM_PROMPT_FAST = """Ты AI-ассистент. Отвечай кратко на русском. Дата: {current_date}"""
 
 SYSTEM_PROMPTS = {
-    "general": """Ты — AI-ассистент. Отвечай на русском языке.
+    "general": """Ты — AI-ассистент. ВСЕГДА отвечай ТОЛЬКО на русском языке.
 Если спрашивают новости без веб-контекста — скажи что нет доступа к актуальным данным.
-Не выдумывай факты. Будь кратким. Дата: {current_date}""",
+Если есть веб-контекст с результатами поиска — используй его для ответа, указывай источники.
+Не выдумывай факты. Не переключайся на другие языки. Дата: {current_date}""",
 
     "ide": """Ты — опытный программист и разработчик. Ты можешь:
 - Писать и анализировать код на любых языках
@@ -83,6 +90,111 @@ def get_system_prompt(mode: str, use_fast: bool = False) -> str:
     
     prompt = SYSTEM_PROMPTS.get(mode, SYSTEM_PROMPTS["general"])
     return prompt.format(current_date=current_date)
+
+
+async def summarize_old_messages(
+    messages: List[ChatMessage],
+    llm_manager,
+    max_tokens: int = MAX_SUMMARY_TOKENS
+) -> str:
+    """
+    Суммирует старые сообщения для сохранения контекста
+    
+    Args:
+        messages: Список старых сообщений для суммирования
+        llm_manager: LLM менеджер для генерации суммирования
+        max_tokens: Максимальное количество токенов в суммировании
+    
+    Returns:
+        Краткое суммирование истории диалога
+    """
+    if not messages:
+        return ""
+    
+    # Форматируем сообщения для суммирования
+    history_text = ""
+    for msg in messages:
+        role_label = "Пользователь" if msg.role == "user" else "Ассистент"
+        # Ограничиваем длину каждого сообщения
+        content = msg.content[:500] + "..." if len(msg.content) > 500 else msg.content
+        history_text += f"{role_label}: {content}\n\n"
+    
+    try:
+        summary_prompt = f"""Создай КРАТКОЕ суммирование предыдущего диалога (максимум 3-4 предложения).
+Сохрани только КЛЮЧЕВУЮ информацию: основные темы, важные решения, контекст.
+
+Диалог:
+{history_text}
+
+КРАТКОЕ СУММИРОВАНИЕ (3-4 предложения):"""
+
+        response = await llm_manager.generate(
+            messages=[LLMMessage(role="user", content=summary_prompt)],
+            temperature=0.3,
+            max_tokens=max_tokens
+        )
+        
+        summary = response.content.strip()
+        logger.debug(f"Summarized {len(messages)} old messages into {len(summary)} chars")
+        return summary
+        
+    except Exception as e:
+        logger.warning(f"Failed to summarize history: {e}")
+        # Fallback: просто сокращаем сообщения
+        brief_history = []
+        for msg in messages[-5:]:  # Берём последние 5 из старых
+            content = msg.content[:100] + "..." if len(msg.content) > 100 else msg.content
+            brief_history.append(f"[{msg.role}]: {content}")
+        return "Предыдущий контекст: " + " | ".join(brief_history)
+
+
+async def prepare_chat_history(
+    history: List[ChatMessage],
+    llm_manager
+) -> List[LLMMessage]:
+    """
+    Подготавливает историю чата для отправки в LLM.
+    Если история длинная, суммирует старые сообщения.
+    
+    Args:
+        history: Полная история чата
+        llm_manager: LLM менеджер
+    
+    Returns:
+        Список LLMMessage для отправки модели
+    """
+    if not history:
+        return []
+    
+    messages = []
+    
+    # Если история небольшая, отправляем всё
+    if len(history) <= SUMMARIZE_THRESHOLD:
+        for msg in history[-MAX_RECENT_MESSAGES:]:
+            messages.append(LLMMessage(role=msg.role, content=msg.content))
+        return messages
+    
+    # История большая - суммируем старые сообщения
+    old_messages = history[:-MAX_RECENT_MESSAGES]
+    recent_messages = history[-MAX_RECENT_MESSAGES:]
+    
+    # Суммируем старую часть
+    summary = await summarize_old_messages(old_messages, llm_manager)
+    
+    if summary:
+        # Добавляем суммирование как системное сообщение
+        messages.append(LLMMessage(
+            role="system",
+            content=f"Контекст предыдущего разговора:\n{summary}"
+        ))
+    
+    # Добавляем недавние сообщения
+    for msg in recent_messages:
+        messages.append(LLMMessage(role=msg.role, content=msg.content))
+    
+    logger.info(f"Prepared history: {len(old_messages)} summarized + {len(recent_messages)} recent messages")
+    
+    return messages
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -138,13 +250,10 @@ async def chat(request: Request, chat_request: ChatRequest):
             )
         ]
         
-        # Добавляем историю если есть
+        # Добавляем историю если есть (с умной суммаризацией для длинных диалогов)
         if chat_request.history:
-            for msg in chat_request.history[-10:]:  # Последние 10 сообщений
-                messages.append(LLMMessage(
-                    role=msg.role,
-                    content=msg.content
-                ))
+            history_messages = await prepare_chat_history(chat_request.history, llm_manager)
+            messages.extend(history_messages)
         
         # Добавляем текущее сообщение
         messages.append(LLMMessage(
@@ -182,17 +291,23 @@ async def chat(request: Request, chat_request: ChatRequest):
                 if search_result.success and search_result.result:
                     results = search_result.result.get("results", [])
                     if results:
-                        web_context = "\n\n📰 **Найденная информация из интернета:**\n"
-                        for i, result in enumerate(results[:3], 1):
+                        web_context = "\n\n📰 **Актуальные результаты поиска в интернете:**\n"
+                        for i, result in enumerate(results[:5], 1):  # Увеличили до 5 результатов
                             title = result.get('title', '').strip()
                             snippet = result.get('snippet', '').strip()
                             url = result.get('url', '').strip()
-                            web_context += f"\n{i}. **{title}**\n{snippet}\n[Источник]({url})\n"
+                            if snippet:
+                                web_context += f"\n{i}. **{title}**\n   {snippet}\n   Источник: {url}\n"
+                            else:
+                                web_context += f"\n{i}. **{title}**\n   Источник: {url}\n"
                         
-                        # Добавляем контекст к сообщению
+                        # Логируем что передаём модели
+                        logger.debug(f"Web context for LLM:\n{web_context[:500]}...")
+                        
+                        # Добавляем контекст к сообщению с чётким инструкциями
                         messages[-1] = LLMMessage(
                             role="user",
-                            content=f"{chat_request.message}\n\n{web_context}\n\nИспользуй эту информацию для ответа."
+                            content=f"{chat_request.message}\n\n{web_context}\n\n**ВАЖНО:** Используй найденную информацию из интернета для ответа. Если есть конкретные цены, товары или факты - включи их в ответ. Укажи источники."
                         )
             except Exception as e:
                 logger.warning(f"Chat web search failed: {e}")
@@ -267,28 +382,11 @@ async def chat(request: Request, chat_request: ChatRequest):
                                 if model_to_use:
                                     break
         
-        # Если указана модель явно или выбрали автоматически
-        original_model = None
-        original_base_url = None
+        # Логируем выбранную модель
         if model_to_use:
-            ollama_provider = llm_manager.providers.get("ollama")
-            if ollama_provider:
-                # Временно меняем модель по умолчанию
-                original_model = ollama_provider.default_model
-                ollama_provider.default_model = model_to_use
-                
-                # Если нужно использовать другой сервер
-                if server_url_to_use and hasattr(ollama_provider, 'client'):
-                    original_base_url = ollama_provider.base_url
-                    ollama_provider.base_url = server_url_to_use
-                    # Пересоздаём клиент с новым URL
-                    import httpx
-                    ollama_provider.client = httpx.AsyncClient(
-                        base_url=server_url_to_use,
-                        timeout=ollama_provider.timeout
-                    )
-                    logger.info(f"Chat: Switched to server {server_url_to_use}")
-                
+            if server_url_to_use:
+                logger.info(f"Chat: Using model {model_to_use} on server {server_url_to_use}")
+            else:
                 logger.info(f"Chat: Using model: {model_to_use}")
         
         # Адаптивные токены в зависимости от сложности
@@ -301,6 +399,12 @@ async def chat(request: Request, chat_request: ChatRequest):
         
         # Генерируем ответ с таймаутом
         import asyncio
+        
+        # Подготавливаем дополнительные kwargs для провайдера
+        generate_kwargs = {}
+        if server_url_to_use:
+            generate_kwargs["server_url"] = server_url_to_use
+        
         try:
             response = await asyncio.wait_for(
                 llm_manager.generate(
@@ -308,34 +412,20 @@ async def chat(request: Request, chat_request: ChatRequest):
                     provider_name=provider_to_use,
                     model=model_to_use,
                     temperature=0.7,
-                    max_tokens=max_tokens
+                    max_tokens=max_tokens,
+                    **generate_kwargs
                 ),
-                timeout=120.0  # 2 минуты максимум
+                timeout=float(Timeouts.CHAT_TIMEOUT)
             )
         except asyncio.TimeoutError:
-            logger.error("LLM request timed out after 120 seconds")
+            logger.error(f"LLM request timed out after {Timeouts.CHAT_TIMEOUT} seconds")
             return ChatResponse(
                 success=False,
                 message="",
-                error="Превышено время ожидания ответа (2 минуты). Попробуйте упростить запрос.",
+                error=f"Превышено время ожидания ответа ({Timeouts.CHAT_TIMEOUT} сек). Попробуйте упростить запрос.",
                 warning="Ollama работает медленно. Проверьте ресурсы сервера.",
-                metadata={"timeout": True, "model": model_to_use}
+                metadata={"timeout": True, "timeout_seconds": Timeouts.CHAT_TIMEOUT, "model": model_to_use}
             )
-        
-        # Восстанавливаем оригинальную модель и сервер если меняли
-        if model_to_use:
-            ollama_provider = llm_manager.providers.get("ollama")
-            if ollama_provider:
-                if original_model:
-                    ollama_provider.default_model = original_model
-                # Восстанавливаем оригинальный сервер если меняли
-                if original_base_url:
-                    ollama_provider.base_url = original_base_url
-                    import httpx
-                    ollama_provider.client = httpx.AsyncClient(
-                        base_url=original_base_url,
-                        timeout=ollama_provider.timeout
-                    )
         
         # Определяем, была ли использована быстрая модель
         used_fast_model = (

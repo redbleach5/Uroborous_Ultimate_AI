@@ -591,6 +591,7 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
                 src={executionResult.htmlPreviewUrl}
                 className="w-full h-96 border-0"
                 title="HTML Preview"
+                sandbox="allow-scripts allow-same-origin"
               />
             </div>
           )}

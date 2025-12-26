@@ -157,14 +157,14 @@ class ResourceAwareSelector:
         try:
             import os
             cpu_cores = os.cpu_count() or 4
-        except:
+        except (OSError, AttributeError):
             cpu_cores = 4
         
         # Оцениваем общую память
         try:
             import psutil
             total_memory_gb = psutil.virtual_memory().total / (1024**3)
-        except:
+        except (ImportError, AttributeError, OSError):
             total_memory_gb = None
         
         # Оцениваем capacity на основе ресурсов (с учётом multi-GPU)

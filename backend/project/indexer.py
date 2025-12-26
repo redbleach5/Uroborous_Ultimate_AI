@@ -3,8 +3,9 @@ Project Indexer - Indexes codebase for RAG
 """
 
 import os
+import fnmatch
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
 from ..core.logger import get_logger
 logger = get_logger(__name__)
 
@@ -32,10 +33,25 @@ class ProjectIndexer:
         ".yaml", ".yml", ".json", ".toml", ".ini", ".cfg", ".conf"
     }
     
-    IGNORE_PATTERNS = {
-        "__pycache__", "node_modules", ".git", ".venv", "venv",
-        "env", ".env", "dist", "build", ".pytest_cache", ".mypy_cache",
-        "*.pyc", "*.pyo", "*.pyd", ".DS_Store"
+    # Directories to always ignore
+    IGNORE_DIRS = {
+        "__pycache__", "node_modules", ".git", ".venv", "venv", "env",
+        ".env", "dist", "build", ".pytest_cache", ".mypy_cache", ".tox",
+        ".nox", ".eggs", "*.egg-info", ".cache", ".idea", ".vscode",
+        "coverage", "htmlcov", ".coverage", ".nyc_output", ".next",
+        ".nuxt", ".svelte-kit", "target", "out", "bin", "obj",
+        ".gradle", ".mvn", "vendor", "Pods", ".dart_tool", ".pub-cache"
+    }
+    
+    # File patterns to ignore (supports wildcards)
+    IGNORE_FILE_PATTERNS = {
+        "*.pyc", "*.pyo", "*.pyd", "*.so", "*.dll", "*.dylib",
+        "*.class", "*.o", "*.obj", "*.exe",
+        ".DS_Store", "Thumbs.db", "*.log", "*.lock",
+        "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+        "poetry.lock", "Pipfile.lock", "Cargo.lock",
+        "*.min.js", "*.min.css", "*.map",
+        ".gitignore", ".dockerignore", ".eslintcache"
     }
     
     def __init__(self, vector_store: Optional[VectorStore] = None):
@@ -47,10 +63,29 @@ class ProjectIndexer:
         """
         self.vector_store = vector_store
     
+    def _should_ignore_dir(self, dirname: str) -> bool:
+        """Check if directory should be ignored"""
+        # Ignore all hidden directories (starting with .)
+        if dirname.startswith('.'):
+            return True
+        # Check against ignore patterns
+        for pattern in self.IGNORE_DIRS:
+            if fnmatch.fnmatch(dirname, pattern) or dirname == pattern:
+                return True
+        return False
+    
+    def _should_ignore_file(self, filename: str) -> bool:
+        """Check if file should be ignored"""
+        # Check against ignore patterns (supports wildcards)
+        for pattern in self.IGNORE_FILE_PATTERNS:
+            if fnmatch.fnmatch(filename, pattern):
+                return True
+        return False
+    
     async def index_project(
         self,
         project_path: str,
-        extensions: Optional[set] = None,
+        extensions: Optional[Set[str]] = None,
         max_file_size: int = 1_000_000  # 1MB
     ) -> Dict[str, Any]:
         """
@@ -75,28 +110,34 @@ class ProjectIndexer:
         
         files_to_index = []
         total_size = 0
+        skipped_dirs = 0
+        skipped_files = 0
         
         # Find all files
         for root, dirs, files in os.walk(project_path):
-            # Filter ignored directories
-            dirs[:] = [d for d in dirs if not any(pattern in d for pattern in self.IGNORE_PATTERNS)]
+            # Filter ignored directories (modifies dirs in-place to prevent descent)
+            original_count = len(dirs)
+            dirs[:] = [d for d in dirs if not self._should_ignore_dir(d)]
+            skipped_dirs += original_count - len(dirs)
             
             for file in files:
+                # Check if file should be ignored
+                if self._should_ignore_file(file):
+                    skipped_files += 1
+                    continue
+                
                 file_path = Path(root) / file
                 
                 # Check extension
                 if file_path.suffix not in extensions:
                     continue
                 
-                # Check if ignored
-                if any(pattern in str(file_path) for pattern in self.IGNORE_PATTERNS):
-                    continue
-                
                 # Check file size
                 try:
                     size = file_path.stat().st_size
                     if size > max_file_size:
-                        logger.warning(f"Skipping large file: {file_path} ({size} bytes)")
+                        logger.debug(f"Skipping large file: {file_path} ({size} bytes)")
+                        skipped_files += 1
                         continue
                     total_size += size
                     files_to_index.append(file_path)
@@ -104,7 +145,7 @@ class ProjectIndexer:
                     logger.warning(f"Error checking file {file_path}: {e}")
                     continue
         
-        logger.info(f"Found {len(files_to_index)} files to index")
+        logger.info(f"Found {len(files_to_index)} files to index (skipped {skipped_dirs} dirs, {skipped_files} files)")
         
         # Index files
         documents = []
