@@ -9,6 +9,8 @@ llm:
       max_retries: 3
       cache_enabled: true
       auto_detect_models: false
+      auto_discover: false
+      distributed_mode: false
     anthropic:
       enabled: true
       default_model: claude-3-opus-20240229
@@ -16,36 +18,28 @@ llm:
       max_retries: 3
       cache_enabled: true
       auto_detect_models: false
+      auto_discover: false
+      distributed_mode: false
     ollama:
       enabled: true
-      # Основной URL - localhost как fallback
-      base_url: http://localhost:11434
-      
-      # Дополнительные серверы для распределённой работы
-      # Система проверяет ВСЕ серверы и выбирает лучший
+      base_url: http://192.168.178.126:11434
       additional_servers:
-        - name: gpu_server              # Удалённый GPU сервер с RTX 3090
-          url: http://192.168.178.126:11434
-          priority: PRIMARY             # Высший приоритет для мощных моделей
-        - name: localhost               # Локальный Ollama
-          url: http://localhost:11434
-          priority: SECONDARY           # Второй приоритет - быстрые модели
-      
-      # Авто-обнаружение в локальной сети
-      auto_discover: false              # Отключено для скорости
-      
-      # Распределённый режим: маршрутизация между серверами
+      - name: gpu_server
+        url: http://192.168.178.126:11434
+        priority: PRIMARY
+      - name: localhost
+        url: http://localhost:11434
+        priority: SECONDARY
+      auto_discover: false
       distributed_mode: true
-      
-      # Таймаут для запросов (секунды)
       timeout: 120
       max_retries: 2
       cache_enabled: true
       auto_detect_models: true
       recommended_models:
         code:
-        - qwen2.5-coder:1.5b   # Быстрая для слабых машин
-        - stable-code:latest   # Альтернатива
+        - qwen2.5-coder:1.5b
+        - stable-code:latest
         - qwen2.5-coder:7b
         - qwen2.5-coder:14b
         - deepseek-coder-v2:16b
@@ -58,24 +52,23 @@ llm:
         - gemma3:12b
         - qwen2.5:14b
         - llama3.3:70b
-        # Для веб-поиска и исследований (research mode)
         research:
-        - qwen2.5:7b          # Отличный для суммаризации
-        - gemma3:4b           # Хороший русский, следует инструкциям
-        - qwen2.5-coder:7b    # Fallback - может работать с текстом
-        - qwen2.5:14b         # Мощный анализ
+        - qwen2.5:7b
+        - gemma3:4b
+        - qwen2.5-coder:7b
+        - qwen2.5:14b
         - gemma3:12b
-        - llama3.1:8b         # Универсальный
-        - gemma3:1b           # Последний fallback (слабый)
+        - llama3.1:8b
+        - gemma3:1b
         reasoning:
         - qwen3:14b
         - qwen3:8b
         - deepseek-r1:14b
         - llama3.3:70b
         fast:
-        - gemma3:1b          # Самая быстрая для чата
-        - qwen2.5-coder:1.5b # Быстрая для кода
-        - stable-code:latest # Альтернатива для кода
+        - gemma3:1b
+        - qwen2.5-coder:1.5b
+        - stable-code:latest
         - qwen2.5:1.5b
         - llama3.2:1b
       default_model: gemma3
@@ -105,19 +98,18 @@ context:
   multi_query: true
 orchestrator:
   enabled: true
-  max_parallel_tasks: 10  # Увеличено для multi-GPU
+  max_parallel_tasks: 10
   task_timeout: 3600
   auto_recovery: true
   planning:
     strategy: llm
     use_memory: true
     max_depth: 5
-  # Масштабирование под ресурсы
   scaling:
-    auto_scale: true  # Автоматическое масштабирование под ресурсы
+    auto_scale: true
     min_parallel_tasks: 3
-    max_parallel_tasks: 20  # Максимум при 3x RTX 3090
-    gpu_tasks_multiplier: 3  # Множитель задач на GPU
+    max_parallel_tasks: 20
+    gpu_tasks_multiplier: 3
 agents:
   reflection:
     enabled: true
@@ -214,7 +206,7 @@ api:
     ping_interval: 20
     ping_timeout: 10
 logging:
-  level: INFO
+  level: DEBUG
   format: json
   file: logs/aillm.log
   max_size_mb: 100
@@ -226,20 +218,18 @@ performance:
     search_results: true
   parallel:
     enabled: true
-    max_workers: 8  # Увеличено для мощного CPU (12900K)
-    max_concurrent_requests: 15  # Параллельные LLM запросы
+    max_workers: 8
+    max_concurrent_requests: 15
   gpu:
     enabled: true
-    multi_gpu: true  # Поддержка нескольких GPU
+    multi_gpu: true
     devices:
-      - cuda:0  # RTX 3090 #1
-      # - cuda:1  # RTX 3090 #2 (раскомментировать после добавления)
-      # - cuda:2  # RTX 3090 #3 (раскомментировать после добавления)
-    memory_per_gpu_gb: 24  # RTX 3090 = 24GB VRAM
-    load_balancing: round_robin  # round_robin, least_loaded, model_affinity
-    # Настройки для Ollama multi-GPU
-    ollama_gpu_layers: -1  # -1 = все слои на GPU
-    ollama_num_parallel: 4  # Параллельные запросы на GPU
+    - cuda:0
+    memory_per_gpu_gb: 24
+    load_balancing: round_robin
+    ollama_gpu_layers: -1
+    ollama_num_parallel: 4
+    device: cpu
 tools:
   enabled: true
   categories:
