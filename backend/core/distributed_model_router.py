@@ -102,11 +102,17 @@ class DistributedModelRouter:
                 "gemma3:12b", "qwen2.5:14b", "llama3.1:8b"
             ],
             "code": [
-                # Для CPU: маленькие кодовые модели ПЕРВЫЕ
+                # Для простых задач: маленькие кодовые модели ПЕРВЫЕ
                 "qwen2.5-coder:1.5b", "stable-code:latest", "stable-code",
                 "qwen2.5-coder:7b", "deepseek-coder:6.7b", "deepseek-coder",
                 "codellama:7b", "codellama",
                 "qwen2.5-coder:14b", "deepseek-coder-v2:16b"  # Большие последние
+            ],
+            "code_complex": [
+                # Для сложной генерации: мощные модели ПЕРВЫЕ (GPU)
+                "qwen2.5-coder:14b", "deepseek-coder-v2:16b",
+                "qwen2.5-coder:7b", "deepseek-coder:6.7b",
+                "codellama:7b", "qwen2.5-coder:1.5b"  # Fallback
             ],
             "reasoning": [
                 "gemma3:1b", "gemma3:4b",  # Маленькие для CPU
@@ -118,10 +124,16 @@ class DistributedModelRouter:
             ],
             "research": [
                 # Для веб-поиска и цен - нужны модели с хорошим пониманием
+                "gemma3:4b",  # Оптимальная для research - быстрая и точная
+                "qwen2.5:7b",  # Хорошая альтернатива
                 "qwen2.5-coder:7b",  # Fallback - доступна локально
-                "qwen2.5:7b", "gemma3:4b",  # Предпочтительные
                 "qwen2.5:14b", "gemma3:12b", "llama3.1:8b",
                 "gemma3:1b"  # Последний fallback
+            ],
+            "research_complex": [
+                # Для сложного анализа и исследований (GPU)
+                "qwen2.5:14b", "gemma3:12b", "llama3.1:8b",
+                "gemma3:4b", "qwen2.5:7b"  # Fallback
             ]
         }
         
@@ -338,6 +350,18 @@ class DistributedModelRouter:
         # ВАЖНО: require_fast=False явно означает НЕ использовать fast модели
         if require_fast:
             model_category = "fast"
+        elif task_type == "research":
+            # Для research используем разные категории в зависимости от сложности
+            if complexity in ["complex", "very_complex"]:
+                model_category = "research_complex"  # Мощные модели для сложного анализа
+            else:
+                model_category = "research"  # Лёгкие модели для простых запросов
+        elif task_type == "code":
+            # Для code также разделяем по сложности
+            if complexity in ["complex", "very_complex"]:
+                model_category = "code_complex"  # Мощные модели для сложной генерации
+            else:
+                model_category = "code"  # Лёгкие модели для простого кода
         elif task_type in self.model_categories:
             model_category = task_type  # Используем категорию по типу задачи
         elif complexity in ["trivial", "simple"]:
