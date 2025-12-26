@@ -19,7 +19,8 @@ logger = get_logger(__name__)
 from ..llm.providers import LLMProviderManager
 from .smart_model_selector import SmartModelSelector, ModelTier, ModelSelection
 from .model_performance_tracker import get_performance_tracker
-from .distributed_model_router import DistributedModelRouter, RoutingDecision
+from .distributed_model_router import DistributedModelRouter
+from .intelligent_model_router import IntelligentModelRouter, ScoredModel
 
 
 class ResourceLevel(Enum):
@@ -93,7 +94,9 @@ class ResourceAwareSelector:
         
         if self.distributed_mode:
             self.distributed_router = DistributedModelRouter(self.config)
-            logger.info("Distributed model routing enabled")
+            # Умный роутер с динамическим скорингом
+            self.intelligent_router = IntelligentModelRouter(self.config)
+            logger.info("Distributed model routing enabled (with intelligent scoring)")
         
         # Кэш информации о ресурсах
         self._resource_info: Optional[ResourceInfo] = None
@@ -356,27 +359,26 @@ class ResourceAwareSelector:
             complexity
         )
         
-        # ======= РАСПРЕДЕЛЁННАЯ МАРШРУТИЗАЦИЯ =======
-        routing_decision: Optional[RoutingDecision] = None
-        if self.distributed_router:
+        # ======= ИНТЕЛЛЕКТУАЛЬНАЯ МАРШРУТИЗАЦИЯ =======
+        intelligent_selection: Optional[ScoredModel] = None
+        
+        if hasattr(self, 'intelligent_router') and self.intelligent_router:
             try:
-                # Research задачи НИКОГДА не используют fast модели (нужна точность)
-                if task_type == "research":
-                    require_fast = False
-                else:
-                    require_fast = quality_requirement == "fast" or complexity in ["trivial", "simple"]
-                routing_decision = await self.distributed_router.route_request(
-                    preferred_model=preferred_model,
+                # Умный роутер анализирует задачу и выбирает лучшую модель по скорингу
+                intelligent_selection = await self.intelligent_router.select_model(
+                    task=task,
                     task_type=task_type or "chat",
-                    complexity=complexity,
-                    require_fast=require_fast
+                    complexity=complexity or "simple",
+                    preferred_model=preferred_model
                 )
                 logger.info(
-                    f"Distributed routing: {routing_decision.model} @ {routing_decision.server_name} "
-                    f"(fallback: {routing_decision.used_fallback})"
+                    f"Intelligent routing: {intelligent_selection.profile.name} @ {intelligent_selection.server_name} "
+                    f"(score: {intelligent_selection.total_score:.2f}, "
+                    f"caps: {intelligent_selection.capability_score:.2f}, "
+                    f"perf: {intelligent_selection.performance_score:.2f})"
                 )
             except Exception as e:
-                logger.warning(f"Distributed routing failed: {e}, using local selection")
+                logger.warning(f"Intelligent routing failed: {e}")
         
         # Выбираем модель
         if self.smart_selector:
@@ -388,14 +390,13 @@ class ResourceAwareSelector:
                     quality_requirement=quality_requirement
                 )
                 
-                # Если есть распределённый роутинг — ВСЕГДА используем его выбор
-                # (он учитывает реальные ресурсы и доступность серверов)
-                if routing_decision and routing_decision.model:
-                    selection.model = routing_decision.model
-                    selection.reason = f"Distributed: {routing_decision.reason}"
-                    logger.debug(f"Using distributed router selection: {routing_decision.model}")
+                # Используем интеллектуальный роутинг если доступен
+                if intelligent_selection:
+                    selection.model = intelligent_selection.profile.name
+                    selection.reason = f"Intelligent: {intelligent_selection.reason} (score: {intelligent_selection.total_score:.2f})"
+                    logger.debug(f"Using intelligent router: {intelligent_selection.profile.name}")
                 else:
-                    # Без distributed router — проверяем доступность модели
+                    # Fallback — проверяем доступность модели
                     if selection.model not in resources.available_models:
                         selection = self._find_alternative_model(
                             selection,
@@ -420,7 +421,14 @@ class ResourceAwareSelector:
                     complexity
                 )
                 
-                # Формируем результат с учётом распределённой маршрутизации
+                # Формируем результат
+                used_intelligent = intelligent_selection is not None
+                
+                # Берём quality и speed из intelligent_selection если есть
+                if intelligent_selection:
+                    quality_estimate = intelligent_selection.quality_score
+                    speed_estimate = intelligent_selection.speed_score
+                
                 result = AdaptiveSelection(
                     model=selection.model,
                     provider=selection.provider,
@@ -428,19 +436,16 @@ class ResourceAwareSelector:
                     resource_level=resources.level,
                     quality_estimate=quality_estimate,
                     speed_estimate=speed_estimate,
-                    reason=f"Selected for {resources.level.value} resources, "
-                           f"quality: {quality_estimate:.2f}, "
-                           f"speed: {speed_estimate:.2f}",
+                    reason=f"Intelligent: quality: {quality_estimate:.2f}, speed: {speed_estimate:.2f}" if used_intelligent 
+                           else f"Local: quality: {quality_estimate:.2f}, speed: {speed_estimate:.2f}",
                     fallback_models=fallback_models,
-                    used_distributed_routing=routing_decision is not None
+                    used_distributed_routing=used_intelligent
                 )
                 
-                # Добавляем информацию о сервере если использовали распределённый роутинг
-                if routing_decision:
-                    result.server_url = routing_decision.server_url
-                    result.server_name = routing_decision.server_name
-                    result.routing_alternatives = routing_decision.alternatives
-                    result.reason = f"Distributed: {routing_decision.server_name} ({routing_decision.reason})"
+                # Добавляем информацию о сервере
+                if intelligent_selection:
+                    result.server_url = intelligent_selection.server_url
+                    result.server_name = intelligent_selection.server_name
                 
                 return result
             except Exception as e:
@@ -448,16 +453,6 @@ class ResourceAwareSelector:
         
         # Fallback на простой выбор
         fallback = self._fallback_selection(resources, complexity)
-        
-        # Применяем распределённый роутинг к fallback если есть
-        if routing_decision:
-            fallback.model = routing_decision.model
-            fallback.server_url = routing_decision.server_url
-            fallback.server_name = routing_decision.server_name
-            fallback.used_distributed_routing = True
-            fallback.routing_alternatives = routing_decision.alternatives
-            fallback.reason = f"Distributed fallback: {routing_decision.reason}"
-        
         return fallback
     
     def _adapt_quality_requirement(

@@ -215,61 +215,22 @@ async def chat(request: Request, chat_request: ChatRequest):
                     config = getattr(engine, 'raw_config', {})
                     resource_selector = ResourceAwareSelector(llm_manager, config)
                 
-                # ======= ОПРЕДЕЛЯЕМ ТИП ЗАДАЧИ ИЗ КОНТЕНТА =======
-                message_lower = chat_request.message.lower()
+                # ======= ИНТЕЛЛЕКТУАЛЬНЫЙ ВЫБОР МОДЕЛИ =======
+                # Логика определения task_type и quality теперь в IntelligentModelRouter
+                # Здесь только базовые подсказки на основе mode
                 
-                # Определяем тип задачи по ключевым словам
-                code_keywords = [
-                    "код", "code", "напиши", "программ", "функци", "класс", "метод",
-                    "симулир", "script", "python", "javascript", "java", "sql", "html",
-                    "css", "api", "implement", "генерир", "создай", "напиши функцию",
-                    "алгоритм", "debug", "исправь", "рефактор", "оптимизир"
-                ]
-                analysis_keywords = [
-                    "анализ", "analyze", "исследу", "сравни", "почему", "explain",
-                    "объясни", "как работает", "разбери", "покажи как"
-                ]
-                reasoning_keywords = [
-                    "подумай", "рассуди", "логик", "think", "reason", "plan",
-                    "спланируй", "стратеги", "решение проблемы"
-                ]
-                # Исследование, цены, актуальная информация
-                research_keywords = [
-                    "цена", "стоит", "стоимость", "сколько", "price", "cost",
-                    "купить", "где купить", "новости", "news", "последние",
-                    "актуальные", "курс", "погода", "версия", "release"
-                ]
+                complexity_level = complexity_info.level.value if complexity_info else "simple"
                 
-                # Определяем тип по ключевым словам
-                if any(kw in message_lower for kw in code_keywords):
-                    task_type = "code"
-                    logger.info(f"Chat: Detected CODE task from message content")
-                elif any(kw in message_lower for kw in research_keywords):
-                    task_type = "research"  # Для цен/новостей нужен research
-                    logger.info(f"Chat: Detected RESEARCH task (price/news query)")
-                elif any(kw in message_lower for kw in analysis_keywords):
-                    task_type = "analysis"
-                    logger.info(f"Chat: Detected ANALYSIS task from message content")
-                elif any(kw in message_lower for kw in reasoning_keywords):
-                    task_type = "reasoning"
-                    logger.info(f"Chat: Detected REASONING task from message content")
-                elif chat_request.mode == "ide":
+                # Mode как подсказка для роутера
+                if chat_request.mode == "ide":
                     task_type = "code"
                 elif chat_request.mode == "research":
                     task_type = "research"
                 else:
-                    task_type = "chat"
+                    task_type = "chat"  # Роутер сам определит из контента
                 
-                complexity_level = complexity_info.level.value if complexity_info else "simple"
-                
-                # Research (цены, новости) всегда требует качественную модель
-                if task_type == "research":
-                    quality = "balanced"  # Для цен/новостей нужна точность
-                    logger.info("Chat: Using balanced quality for research query")
-                elif complexity_level in ["trivial", "simple"]:
-                    quality = "fast"  # Быстрые модели для простых задач
-                else:
-                    quality = "balanced"
+                # Quality определяется роутером автоматически
+                quality = "balanced"
                 
                 # Распределённый выбор: ищет модель на ВСЕХ доступных серверах
                 selection = await resource_selector.select_adaptive_model(
