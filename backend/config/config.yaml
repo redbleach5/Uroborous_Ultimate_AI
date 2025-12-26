@@ -18,45 +18,37 @@ llm:
       auto_detect_models: false
     ollama:
       enabled: true
-      # Основной URL - localhost как fallback, который всегда доступен
-      # Реальный выбор сервера делает DistributedModelRouter по приоритетам
+      # Основной URL - localhost как fallback
       base_url: http://localhost:11434
       
-      # Резервные URL (если все серверы недоступны)
-      fallback_urls:
-        - ollama-server.local:11434     # mDNS имя
-        - ollama.local:11434            # Альтернативное mDNS
-      
       # Дополнительные серверы для распределённой работы
-      # Приоритеты: PRIMARY (мощный GPU) > SECONDARY (localhost) > FALLBACK
+      # Система проверяет ВСЕ серверы и выбирает лучший
       additional_servers:
         - name: gpu_server              # Удалённый GPU сервер с RTX 3090
           url: http://192.168.178.126:11434
-          priority: PRIMARY             # Высший приоритет для мощных моделей!
-        - name: localhost               # Локальный Ollama (если есть)
+          priority: PRIMARY             # Высший приоритет для мощных моделей
+        - name: localhost               # Локальный Ollama
           url: http://localhost:11434
           priority: SECONDARY           # Второй приоритет - быстрые модели
-        # - name: backup_server
-        #   url: http://192.168.178.200:11434
-        #   priority: FALLBACK
       
-      # Авто-обнаружение Ollama в локальной сети
-      # Если true - будет искать сервер автоматически
-      auto_discover: true
+      # Авто-обнаружение в локальной сети
+      auto_discover: false              # Отключено для скорости
       
-      # Распределённый режим: включает маршрутизацию моделей между серверами
+      # Распределённый режим: маршрутизация между серверами
       distributed_mode: true
       
-      timeout: 300
+      # Таймаут для запросов (секунды)
+      timeout: 120
       max_retries: 2
       cache_enabled: true
       auto_detect_models: true
       recommended_models:
         code:
-        - qwen2.5-coder:14b
+        - qwen2.5-coder:1.5b   # Быстрая для слабых машин
+        - stable-code:latest   # Альтернатива
         - qwen2.5-coder:7b
+        - qwen2.5-coder:14b
         - deepseek-coder-v2:16b
-        - codellama:13b
         chat:
         - gemma3:12b
         - gemma3:4b
@@ -66,14 +58,23 @@ llm:
         - gemma3:12b
         - qwen2.5:14b
         - llama3.3:70b
+        # Для веб-поиска и исследований (research mode)
+        research:
+        - qwen2.5:7b          # Отличный для суммаризации
+        - gemma3:4b           # Хороший русский, следует инструкциям
+        - qwen2.5:14b         # Мощный анализ
+        - gemma3:12b
+        - llama3.1:8b         # Универсальный
         reasoning:
         - qwen3:14b
         - qwen3:8b
         - deepseek-r1:14b
         - llama3.3:70b
         fast:
+        - gemma3:1b          # Самая быстрая для чата
+        - qwen2.5-coder:1.5b # Быстрая для кода
+        - stable-code:latest # Альтернатива для кода
         - qwen2.5:1.5b
-        - gemma3:1b
         - llama3.2:1b
       default_model: gemma3
 rag:

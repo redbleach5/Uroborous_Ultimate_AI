@@ -384,18 +384,12 @@ class ResourceAwareSelector:
                     quality_requirement=quality_requirement
                 )
                 
-                # Если есть распределённый роутинг и модель там другая — используем его
-                if routing_decision:
-                    # Распределённый роутер нашёл лучший вариант
-                    if routing_decision.model != selection.model:
-                        # Проверяем, есть ли выбранная SmartSelector модель на каком-то сервере
-                        if selection.model in resources.available_models:
-                            # Модель из SmartSelector доступна локально — можно использовать её
-                            pass
-                        else:
-                            # Модели нет локально — используем то, что нашёл distributed router
-                            selection.model = routing_decision.model
-                            selection.reason = f"Distributed: {routing_decision.reason}"
+                # Если есть распределённый роутинг — ВСЕГДА используем его выбор
+                # (он учитывает реальные ресурсы и доступность серверов)
+                if routing_decision and routing_decision.model:
+                    selection.model = routing_decision.model
+                    selection.reason = f"Distributed: {routing_decision.reason}"
+                    logger.debug(f"Using distributed router selection: {routing_decision.model}")
                 else:
                     # Без distributed router — проверяем доступность модели
                     if selection.model not in resources.available_models:

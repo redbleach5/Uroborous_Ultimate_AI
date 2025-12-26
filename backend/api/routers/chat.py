@@ -40,25 +40,13 @@ class ChatResponse(BaseModel):
 
 
 # Системные промпты для разных режимов
+# Короткий промпт для быстрых ответов
+SYSTEM_PROMPT_FAST = """Ты AI-ассистент. Отвечай кратко на русском. Дата: {current_date}"""
+
 SYSTEM_PROMPTS = {
-    "general": """Ты — универсальный AI-ассистент. Ты можешь:
-- Отвечать на любые вопросы
-- Шутить и поддерживать непринуждённую беседу
-- Объяснять команды Linux, технологии, концепции
-- Помогать с повседневными задачами
-- Давать советы и рекомендации
-
-ВАЖНЫЕ ПРАВИЛА:
-1. Отвечай ТОЛЬКО на русском языке. Не используй слова из других языков (вьетнамского, хинди, итальянского и т.д.)
-2. Если пользователь спрашивает о новостях или актуальных событиях:
-   - Если тебе предоставлен веб-контекст с реальными данными — используй его
-   - Если веб-контекста НЕТ — честно скажи: "У меня нет доступа к актуальным новостям. Мои знания ограничены датой обучения модели."
-   - НИКОГДА не выдумывай новости, события или факты!
-3. Если не знаешь ответ — так и скажи, не придумывай информацию.
-
-Будь дружелюбным и полезным. Используй эмодзи где уместно.
-Форматируй ответы с markdown для лучшей читаемости.
-Текущая дата: {current_date}""",
+    "general": """Ты — AI-ассистент. Отвечай на русском языке.
+Если спрашивают новости без веб-контекста — скажи что нет доступа к актуальным данным.
+Не выдумывай факты. Будь кратким. Дата: {current_date}""",
 
     "ide": """Ты — опытный программист и разработчик. Ты можешь:
 - Писать и анализировать код на любых языках
@@ -85,10 +73,15 @@ SYSTEM_PROMPTS = {
 }
 
 
-def get_system_prompt(mode: str) -> str:
+def get_system_prompt(mode: str, use_fast: bool = False) -> str:
     """Получает системный промпт для режима с подстановкой даты"""
-    prompt = SYSTEM_PROMPTS.get(mode, SYSTEM_PROMPTS["general"])
     current_date = datetime.now().strftime("%d %B %Y, %H:%M")
+    
+    # Для простых запросов используем короткий промпт
+    if use_fast:
+        return SYSTEM_PROMPT_FAST.format(current_date=current_date)
+    
+    prompt = SYSTEM_PROMPTS.get(mode, SYSTEM_PROMPTS["general"])
     return prompt.format(current_date=current_date)
 
 
@@ -134,11 +127,14 @@ async def chat(request: Request, chat_request: ChatRequest):
     birthday_greeting = get_birthday_greeting()  # Проверка на день рождения
     
     try:
+        # Используем короткий промпт для простых запросов
+        use_fast_prompt = complexity_info and complexity_info.level.value in ["trivial", "simple"]
+        
         # Формируем сообщения
         messages = [
             LLMMessage(
                 role="system",
-                content=get_system_prompt(chat_request.mode or "general")
+                content=get_system_prompt(chat_request.mode or "general", use_fast=use_fast_prompt)
             )
         ]
         
@@ -207,10 +203,49 @@ async def chat(request: Request, chat_request: ChatRequest):
                     config = getattr(engine, 'raw_config', {})
                     resource_selector = ResourceAwareSelector(llm_manager, config)
                 
-                # Определяем тип задачи для чата
-                task_type = "chat" if chat_request.mode == "general" else chat_request.mode
+                # ======= ОПРЕДЕЛЯЕМ ТИП ЗАДАЧИ ИЗ КОНТЕНТА =======
+                message_lower = chat_request.message.lower()
+                
+                # Определяем тип задачи по ключевым словам
+                code_keywords = [
+                    "код", "code", "напиши", "программ", "функци", "класс", "метод",
+                    "симулир", "script", "python", "javascript", "java", "sql", "html",
+                    "css", "api", "implement", "генерир", "создай", "напиши функцию",
+                    "алгоритм", "debug", "исправь", "рефактор", "оптимизир"
+                ]
+                analysis_keywords = [
+                    "анализ", "analyze", "исследу", "сравни", "почему", "explain",
+                    "объясни", "как работает", "разбери", "покажи как"
+                ]
+                reasoning_keywords = [
+                    "подумай", "рассуди", "логик", "think", "reason", "plan",
+                    "спланируй", "стратеги", "решение проблемы"
+                ]
+                
+                # Определяем тип по ключевым словам
+                if any(kw in message_lower for kw in code_keywords):
+                    task_type = "code"
+                    logger.info(f"Chat: Detected CODE task from message content")
+                elif any(kw in message_lower for kw in analysis_keywords):
+                    task_type = "analysis"
+                    logger.info(f"Chat: Detected ANALYSIS task from message content")
+                elif any(kw in message_lower for kw in reasoning_keywords):
+                    task_type = "reasoning"
+                    logger.info(f"Chat: Detected REASONING task from message content")
+                elif chat_request.mode == "ide":
+                    task_type = "code"
+                elif chat_request.mode == "research":
+                    task_type = "analysis"
+                else:
+                    task_type = "chat"
+                
                 complexity_level = complexity_info.level.value if complexity_info else "simple"
-                quality = "fast" if complexity_level in ["trivial", "simple"] else "balanced"
+                
+                # Для простых задач всегда fast, для сложных - balanced
+                if complexity_level in ["trivial", "simple"]:
+                    quality = "fast"  # Быстрые модели для простых задач
+                else:
+                    quality = "balanced"
                 
                 # Распределённый выбор: ищет модель на ВСЕХ доступных серверах
                 selection = await resource_selector.select_adaptive_model(
@@ -271,14 +306,36 @@ async def chat(request: Request, chat_request: ChatRequest):
                 
                 logger.info(f"Chat: Using model: {model_to_use}")
         
-        # Генерируем ответ
-        response = await llm_manager.generate(
-            messages=messages,
-            provider_name=provider_to_use,
-            model=model_to_use,
-            temperature=0.7,
-            max_tokens=2000
-        )
+        # Адаптивные токены в зависимости от сложности
+        if complexity_info and complexity_info.level.value in ["trivial", "simple"]:
+            max_tokens = 500  # Короткие ответы для простых вопросов
+        elif complexity_info and complexity_info.level.value == "medium":
+            max_tokens = 1000
+        else:
+            max_tokens = 2000  # Полный лимит для сложных задач
+        
+        # Генерируем ответ с таймаутом
+        import asyncio
+        try:
+            response = await asyncio.wait_for(
+                llm_manager.generate(
+                    messages=messages,
+                    provider_name=provider_to_use,
+                    model=model_to_use,
+                    temperature=0.7,
+                    max_tokens=max_tokens
+                ),
+                timeout=120.0  # 2 минуты максимум
+            )
+        except asyncio.TimeoutError:
+            logger.error("LLM request timed out after 120 seconds")
+            return ChatResponse(
+                success=False,
+                message="",
+                error="Превышено время ожидания ответа (2 минуты). Попробуйте упростить запрос.",
+                warning="Ollama работает медленно. Проверьте ресурсы сервера.",
+                metadata={"timeout": True, "model": model_to_use}
+            )
         
         # Восстанавливаем оригинальную модель и сервер если меняли
         if model_to_use:

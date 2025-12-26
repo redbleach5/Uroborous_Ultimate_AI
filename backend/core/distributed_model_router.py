@@ -83,18 +83,39 @@ class DistributedModelRouter:
         self.servers: Dict[str, OllamaServer] = {}
         self.model_index: Dict[str, List[OllamaServer]] = {}  # model -> [servers]
         
-        # Конфигурация
-        self._cache_ttl = 120  # Кэш на 2 минуты
+        # Конфигурация - оптимизирована для быстрого отклика
+        self._cache_ttl = 300  # Кэш на 5 минут (реже проверяем серверы)
         self._last_discovery = 0.0
-        self._timeout = 5.0  # Таймаут на проверку сервера
+        self._timeout = 2.0  # Быстрый таймаут (2 сек вместо 5)
+        self._discovery_in_progress = False  # Флаг для неблокирующего discovery
         
         # Модели по категориям для fallback
+        # Категории моделей с приоритетом (первые = лучше)
+        # ВАЖНО: для CPU-only систем приоритет у маленьких моделей!
         self.model_categories = {
-            "fast": ["gemma3:1b", "qwen2.5:1.5b", "llama3.2:1b", "phi3:3b"],
-            "chat": ["gemma3:12b", "gemma3:4b", "qwen2.5:14b", "llama3.1:8b", "llama3.2:3b"],
-            "code": ["qwen2.5-coder:14b", "qwen2.5-coder:7b", "deepseek-coder-v2:16b", "codellama:7b"],
-            "reasoning": ["qwen3:14b", "qwen3:8b", "deepseek-r1:14b", "llama3.3:70b"],
-            "analysis": ["gemma3:12b", "qwen2.5:14b", "llama3.1:8b"]
+            "fast": [
+                "gemma3:1b", "qwen2.5-coder:1.5b", "qwen2.5:1.5b",
+                "llama3.2:1b", "phi3:3b"
+            ],
+            "chat": [
+                "gemma3:1b", "gemma3:4b", "llama3.2:3b",  # Маленькие первые!
+                "gemma3:12b", "qwen2.5:14b", "llama3.1:8b"
+            ],
+            "code": [
+                # Для CPU: маленькие кодовые модели ПЕРВЫЕ
+                "qwen2.5-coder:1.5b", "stable-code:latest", "stable-code",
+                "qwen2.5-coder:7b", "deepseek-coder:6.7b", "deepseek-coder",
+                "codellama:7b", "codellama",
+                "qwen2.5-coder:14b", "deepseek-coder-v2:16b"  # Большие последние
+            ],
+            "reasoning": [
+                "gemma3:1b", "gemma3:4b",  # Маленькие для CPU
+                "qwen3:8b", "qwen3:14b", "deepseek-r1:14b", "llama3.3:70b"
+            ],
+            "analysis": [
+                "gemma3:1b", "gemma3:4b",  # Маленькие для CPU
+                "gemma3:12b", "qwen2.5:14b", "llama3.1:8b"
+            ]
         }
         
         self._initialize_servers_from_config()
@@ -157,6 +178,8 @@ class DistributedModelRouter:
         """
         Обнаруживает все доступные серверы и их модели
         
+        ОПТИМИЗАЦИЯ: Не блокирует запросы если есть кэш
+        
         Args:
             force: Принудительно обновить кэш
             
@@ -164,26 +187,59 @@ class DistributedModelRouter:
             Dict со всеми серверами и их статусами
         """
         current_time = time.time()
-        if not force and current_time - self._last_discovery < self._cache_ttl:
+        cache_expired = current_time - self._last_discovery >= self._cache_ttl
+        
+        # Если кэш валидный — сразу возвращаем
+        if not force and not cache_expired:
             return self.servers
         
+        # Если уже идёт discovery — не запускаем второй
+        if self._discovery_in_progress:
+            return self.servers
+        
+        # Если есть хоть какие-то данные и кэш просто истёк — используем старые данные
+        # и запускаем обновление в фоне
+        has_any_data = any(s.is_available for s in self.servers.values())
+        
+        if has_any_data and cache_expired and not force:
+            # Запускаем обновление в фоне, не блокируя
+            asyncio.create_task(self._background_discovery())
+            return self.servers
+        
+        # Первый запуск или force — делаем синхронно но быстро
+        await self._do_discovery()
+        return self.servers
+    
+    async def _background_discovery(self):
+        """Фоновое обновление серверов"""
+        try:
+            self._discovery_in_progress = True
+            await self._do_discovery()
+        finally:
+            self._discovery_in_progress = False
+    
+    async def _do_discovery(self):
+        """Выполняет discovery с таймаутом"""
         logger.info("Discovering Ollama servers and models...")
         
-        # Параллельно проверяем все серверы
-        tasks = [self._check_server(url) for url in self.servers.keys()]
-        await asyncio.gather(*tasks, return_exceptions=True)
+        try:
+            # Параллельно проверяем все серверы с общим таймаутом
+            tasks = [self._check_server(url) for url in self.servers.keys()]
+            await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=6.0  # Максимум 6 секунд на всё discovery
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Discovery timed out, using partial results")
         
         # Перестраиваем индекс моделей
         self._rebuild_model_index()
-        
-        self._last_discovery = current_time
+        self._last_discovery = time.time()
         
         # Логируем результаты
         available_count = sum(1 for s in self.servers.values() if s.is_available)
         total_models = len(self.model_index)
         logger.info(f"Discovery complete: {available_count}/{len(self.servers)} servers available, {total_models} unique models")
-        
-        return self.servers
     
     async def _check_server(self, url: str) -> bool:
         """Проверяет доступность сервера и получает его модели"""
@@ -280,9 +336,21 @@ class DistributedModelRouter:
         # Ищем нужную модель
         candidates = self._get_model_candidates(preferred_model, model_category)
         
-        # Пробуем найти модель на доступных серверах
+        # Пробуем найти модель на доступных серверах (с частичным совпадением)
         for model in candidates:
+            # Точное совпадение
             servers = self.model_index.get(model, [])
+            
+            # Частичное совпадение если точного нет
+            if not servers:
+                base_name = model.split(":")[0] if ":" in model else model
+                for indexed_model, indexed_servers in self.model_index.items():
+                    if indexed_model.startswith(base_name) and indexed_servers:
+                        servers = indexed_servers
+                        model = indexed_model  # Используем найденную модель
+                        logger.debug(f"Partial match: {base_name} -> {indexed_model}")
+                        break
+            
             if servers:
                 # Берём первый доступный сервер (уже отсортирован по приоритету)
                 server = servers[0]
