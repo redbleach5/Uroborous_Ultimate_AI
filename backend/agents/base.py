@@ -18,20 +18,22 @@ from ..core.exceptions import AgentException
 from ..core.logger import structured_logger
 from ..core.pydantic_utils import pydantic_to_dict
 from .reflection_mixin import ReflectionMixin
+from .uncertainty_search_mixin import UncertaintySearchMixin
 
 if TYPE_CHECKING:
     from .communicator import AgentCommunicator
 
 
-class BaseAgent(ABC, ReflectionMixin):
+class BaseAgent(ABC, ReflectionMixin, UncertaintySearchMixin):
     """
-    Base class for all agents with reflection and communication capabilities.
+    Base class for all agents with reflection, communication, and uncertainty search capabilities.
     
     Features:
     - Automatic reflection and self-correction
     - Inter-agent communication via AgentCommunicator
     - Task delegation to other agents
     - Quality tracking and improvement
+    - Automatic web search when uncertain (UncertaintySearchMixin)
     """
     
     def __init__(
@@ -54,8 +56,9 @@ class BaseAgent(ABC, ReflectionMixin):
             context_manager: Context manager
             memory: Long term memory
         """
-        # Initialize ReflectionMixin
+        # Initialize mixins
         ReflectionMixin.__init__(self)
+        UncertaintySearchMixin.__init__(self)
         
         self.name = name
         self.config = config

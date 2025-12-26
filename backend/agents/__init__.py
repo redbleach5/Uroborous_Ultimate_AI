@@ -11,6 +11,7 @@ from .workflow import WorkflowAgent
 from .integration import IntegrationAgent
 from .monitoring import MonitoringAgent
 from .reflection_mixin import ReflectionMixin, ReflectionResult, ReflectionQuality
+from .uncertainty_search_mixin import UncertaintySearchMixin
 from .communicator import (
     AgentCommunicator,
     AgentMessage,
@@ -38,6 +39,8 @@ __all__ = [
     "ReflectionMixin",
     "ReflectionResult",
     "ReflectionQuality",
+    # Uncertainty Search
+    "UncertaintySearchMixin",
     # Communication
     "AgentCommunicator",
     "AgentMessage",
