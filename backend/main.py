@@ -11,9 +11,8 @@ import uvicorn
 from .config import get_config
 from .core.engine import IDAEngine
 from .core.logger import get_logger, configure_logging, create_logging_middleware
-from .api.routers import tasks, code, tools, preview, config as config_router, monitoring, project, multimodal, metrics, batch, feedback, learning, chat, models, secret
+from .api.routers import tasks, code, tools, preview, config as config_router, monitoring, project, multimodal, metrics, batch, feedback, learning, chat, models, secret, code_intelligence
 from .api.docs import custom_openapi
-from .core.safety_utils import setup_signal_handlers
 from .core.preview_manager import PreviewManager
 from .core.rate_limiter import RateLimitMiddleware, RateLimiter
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -130,6 +129,7 @@ app.include_router(feedback.router, prefix="/api/v1", tags=["feedback"])
 app.include_router(learning.router, prefix="/api/v1", tags=["learning"])
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 app.include_router(models.router, prefix="/api/v1", tags=["models"])
+app.include_router(code_intelligence.router, prefix="/api/v1", tags=["code-intelligence"])
 app.include_router(secret.router, prefix="/api/secret")  # 🥚 Скрытый роутер
 
 
@@ -194,7 +194,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 if engine:
                     # Отправляем начало
-                    await send_progress("started", 0, f"Начинаем выполнение задачи...")
+                    await send_progress("started", 0, "Начинаем выполнение задачи...")
                     
                     try:
                         # Добавляем callback для прогресса в контекст

@@ -19,8 +19,7 @@ TaskComplexityService - Единая точка анализа сложност�
 """
 
 import re
-from dataclasses import dataclass, field
-from typing import Dict, Any, Optional, List
+from typing import Dict, Optional
 
 from .logger import get_logger
 from .types import ComplexityLevel, ModelTier, ComplexityResult

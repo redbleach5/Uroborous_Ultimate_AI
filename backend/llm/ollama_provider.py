@@ -1,11 +1,12 @@
 """
-Ollama LLM Provider (Local models)
+Ollama LLM Provider (Local models) with retry and exponential backoff
 """
 
 import httpx
 import json
 import re
 import time
+import asyncio
 from typing import List, Optional, AsyncIterator, Dict, Any
 from ..core.logger import get_logger
 logger = get_logger(__name__)
@@ -13,6 +14,70 @@ logger = get_logger(__name__)
 from .base import BaseLLMProvider, LLMMessage, LLMResponse
 from ..core.exceptions import LLMException
 from ..core.model_performance_tracker import get_performance_tracker
+
+
+async def retry_with_backoff(
+    coroutine_func,
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+    max_delay: float = 30.0,
+    exponential_base: float = 2.0,
+    retryable_exceptions: tuple = (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError),
+    on_retry: callable = None
+):
+    """
+    Execute a coroutine with exponential backoff retry logic.
+    
+    Args:
+        coroutine_func: Async function to execute (called on each attempt)
+        max_retries: Maximum number of retry attempts
+        base_delay: Initial delay in seconds
+        max_delay: Maximum delay between retries
+        exponential_base: Base for exponential calculation
+        retryable_exceptions: Tuple of exceptions that should trigger retry
+        on_retry: Optional callback(attempt, error, delay) called before each retry
+        
+    Returns:
+        Result of the coroutine
+        
+    Raises:
+        Last exception if all retries fail
+    """
+    last_exception = None
+    
+    for attempt in range(max_retries + 1):
+        try:
+            return await coroutine_func()
+        except retryable_exceptions as e:
+            last_exception = e
+            
+            if attempt < max_retries:
+                # Calculate delay with exponential backoff and jitter
+                delay = min(
+                    base_delay * (exponential_base ** attempt),
+                    max_delay
+                )
+                # Add random jitter (±20%) to prevent thundering herd
+                import random
+                jitter = delay * 0.2 * (random.random() * 2 - 1)
+                delay = max(0.1, delay + jitter)
+                
+                if on_retry:
+                    on_retry(attempt + 1, e, delay)
+                else:
+                    logger.warning(
+                        f"Retry attempt {attempt + 1}/{max_retries} after error: {e}. "
+                        f"Waiting {delay:.2f}s before next attempt..."
+                    )
+                
+                await asyncio.sleep(delay)
+            else:
+                # Last attempt failed
+                logger.error(f"All {max_retries + 1} attempts failed. Last error: {e}")
+    
+    if last_exception:
+        raise last_exception
+    raise RuntimeError("Unexpected state in retry_with_backoff")
 
 
 class OllamaProvider(BaseLLMProvider):
@@ -246,17 +311,17 @@ class OllamaProvider(BaseLLMProvider):
                 reason = f"Выбрана мощная модель для сложного проекта ({code_files} файлов, {total_lines:,} строк)"
             elif medium_models:
                 selected = medium_models[0]
-                reason = f"Используется средняя модель (большие модели недоступны)"
+                reason = "Используется средняя модель (большие модели недоступны)"
             else:
                 selected = small_models[0] if small_models else self.default_model
                 reason = "Используется доступная модель (рекомендуется установить модель 14B+)"
         elif is_medium:
             if medium_models:
                 selected = medium_models[0]
-                reason = f"Выбрана модель для проекта средней сложности"
+                reason = "Выбрана модель для проекта средней сложности"
             elif large_models:
                 selected = large_models[0]
-                reason = f"Используется мощная модель для качества"
+                reason = "Используется мощная модель для качества"
             else:
                 selected = small_models[0] if small_models else self.default_model
                 reason = "Используется доступная модель"
@@ -789,15 +854,34 @@ Show your reasoning process clearly. Think deeply before providing your final an
                 has_thinking=thinking_content is not None
             )
         except (httpx.HTTPError, httpx.ConnectError, httpx.TimeoutException) as e:
-            # Пробуем fallback сервер при ошибках подключения
-            logger.warning(f"Ollama request failed: {e}. Trying fallback server...")
+            # Пробуем fallback сервер при ошибках подключения с exponential backoff
+            logger.warning(f"Ollama request failed: {e}. Trying fallback server with exponential backoff...")
             
-            # Limit recursion depth to prevent infinite loops
+            # Check retry count and try with backoff
             retry_count = kwargs.get("_retry_count", 0)
             max_retries = 3
             
-            if retry_count < max_retries and await self._try_next_server():
-                logger.info(f"Retrying request on fallback server (attempt {retry_count + 1}/{max_retries})...")
+            if retry_count < max_retries:
+                # Calculate exponential backoff delay
+                base_delay = 1.0
+                delay = min(base_delay * (2 ** retry_count), 30.0)
+                
+                # Add jitter to prevent thundering herd
+                import random
+                jitter = delay * 0.2 * (random.random() * 2 - 1)
+                delay = max(0.1, delay + jitter)
+                
+                logger.info(
+                    f"Retry attempt {retry_count + 1}/{max_retries} with {delay:.2f}s backoff..."
+                )
+                
+                # Wait before retry
+                await asyncio.sleep(delay)
+                
+                # Try switching to fallback server
+                if await self._try_next_server():
+                    logger.info(f"Switched to fallback server: {self.base_url}")
+                
                 try:
                     return await self.generate(
                         messages=messages,
@@ -821,18 +905,34 @@ Show your reasoning process clearly. Think deeply before providing your final an
                 success=False,
                 error_type="HTTPError"
             )
-            raise LLMException(f"Ollama API error (all servers tried): {e}") from e
+            raise LLMException(f"Ollama API error after {retry_count + 1} attempts: {e}") from e
         except Exception as e:
-            # Для других ошибок также пробуем fallback
+            # Для других ошибок также пробуем fallback с exponential backoff
             if "connect" in str(e).lower() or "timeout" in str(e).lower():
-                logger.warning(f"Connection error: {e}. Trying fallback server...")
+                logger.warning(f"Connection error: {e}. Trying fallback server with backoff...")
                 
-                # Limit recursion depth
                 retry_count = kwargs.get("_retry_count", 0)
                 max_retries = 3
                 
-                if retry_count < max_retries and await self._try_next_server():
-                    logger.info(f"Retrying request on fallback server (attempt {retry_count + 1}/{max_retries})...")
+                if retry_count < max_retries:
+                    # Calculate exponential backoff delay
+                    base_delay = 1.0
+                    delay = min(base_delay * (2 ** retry_count), 30.0)
+                    
+                    # Add jitter
+                    import random
+                    jitter = delay * 0.2 * (random.random() * 2 - 1)
+                    delay = max(0.1, delay + jitter)
+                    
+                    logger.info(
+                        f"Retry attempt {retry_count + 1}/{max_retries} with {delay:.2f}s backoff..."
+                    )
+                    
+                    await asyncio.sleep(delay)
+                    
+                    if await self._try_next_server():
+                        logger.info(f"Switched to fallback server: {self.base_url}")
+                    
                     try:
                         return await self.generate(
                             messages=messages,
@@ -856,7 +956,7 @@ Show your reasoning process clearly. Think deeply before providing your final an
                 success=False,
                 error_type=type(e).__name__
             )
-            raise LLMException(f"Ollama error: {e}") from e
+            raise LLMException(f"Ollama error after retries: {e}") from e
         finally:
             # Always close temporary client to prevent resource leaks
             if temp_client is not None:

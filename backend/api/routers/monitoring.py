@@ -3,7 +3,6 @@ Monitoring router
 """
 
 from fastapi import APIRouter, Request
-from typing import Dict, Any
 
 from ...core.logger import get_logger
 logger = get_logger(__name__)
@@ -68,7 +67,6 @@ async def get_debug_logs_info(request: Request):
             "message": "Intelligent monitor не инициализирован"
         }
     
-    from pathlib import Path
     
     debug_dir = engine.monitor.debug_logs_dir
     

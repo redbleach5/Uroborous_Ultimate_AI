@@ -3,7 +3,6 @@ TaskRouter - Интеллектуальная маршрутизация зад�
 Использует легкие модели для анализа и принятия решений
 """
 
-import asyncio
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from datetime import datetime
@@ -13,7 +12,7 @@ logger = get_logger(__name__)
 from ..llm.providers import LLMProviderManager
 from ..llm.base import LLMMessage
 from .llm_classifier import LLMClassifier, REQUEST_TYPE_SCHEMA
-from .constants import ConfidenceThresholds, ComplexityThresholds
+from .constants import ConfidenceThresholds
 
 
 @dataclass

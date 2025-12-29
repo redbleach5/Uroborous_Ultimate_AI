@@ -77,10 +77,12 @@ export function UnifiedChat() {
   const modelSelector = useModelSelector();
   const sidebar = useSidebar();
   
-  // WebSocket for real-time progress (optional enhancement)
+  // WebSocket for real-time progress (enabled by default for better UX)
   const [wsProgress, setWsProgress] = useState<ProgressUpdate | null>(null);
   const [wsEnabled, setWsEnabled] = useState(() => {
-    return localStorage.getItem('wsEnabled') === 'true';
+    // Default to true for better UX, user can disable if needed
+    const stored = localStorage.getItem('wsEnabled');
+    return stored === null ? true : stored === 'true';
   });
   
   const handleWsProgress = useCallback((progress: ProgressUpdate) => {

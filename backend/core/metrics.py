@@ -5,7 +5,6 @@ Performance metrics collection
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 from collections import defaultdict, deque
-import time
 from .logger import get_logger
 logger = get_logger(__name__)
 

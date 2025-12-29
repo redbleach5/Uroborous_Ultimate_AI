@@ -3,8 +3,7 @@ Time Estimator - Оценка времени выполнения задач
 Учитывает что на малых моделях обработка может занять до часа
 """
 
-import time
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
 from .logger import get_logger

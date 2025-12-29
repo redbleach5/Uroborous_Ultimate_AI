@@ -5,7 +5,6 @@ Model Performance Tracker - Отслеживание производитель�
 Поддерживает персистентность метрик в SQLite для обучения на опыте.
 """
 
-import time
 import asyncio
 import json
 import aiosqlite
@@ -13,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 from .logger import get_logger
 logger = get_logger(__name__)
 import statistics

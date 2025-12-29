@@ -4,7 +4,6 @@ Model Trainer - Trains ML models
 
 from typing import Dict, Any, Optional
 import pandas as pd
-import numpy as np
 from ..core.logger import get_logger
 logger = get_logger(__name__)
 

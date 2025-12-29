@@ -6,12 +6,11 @@ SmartModelSelector - Интеллектуальный выбор модели
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from .logger import get_logger
-from .types import ComplexityLevel, ModelTier, ModelSelection as BaseModelSelection
+from .types import ComplexityLevel, ModelTier
 
 logger = get_logger(__name__)
 
 from ..llm.providers import LLMProviderManager
-from ..llm.base import LLMMessage
 from .task_complexity_service import get_complexity_service
 
 
@@ -69,7 +68,6 @@ class SmartModelSelector:
         Динамически загружает доступные модели с сервера и распределяет по tier'ам.
         """
         import time
-        import re
         
         current_time = time.time()
         if current_time - self._cache_timestamp < self._cache_ttl and self._available_models_cache:
@@ -127,7 +125,7 @@ class SmartModelSelector:
         """
         import re
         
-        model_lower = model_name.lower()
+        model_name.lower()
         
         # Извлекаем размер модели
         size_b = 7.0  # Default

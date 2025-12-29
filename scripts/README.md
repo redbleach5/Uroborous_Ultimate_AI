@@ -120,12 +120,17 @@
 ```
 
 **Что удаляет:**
-- `memory/memories.db` — память агентов
-- `memory/learning.db` — обученные паттерны
+- `memory/memories.db` — память агентов (решения, failed tasks, user preferences, model performance)
+- `memory/learning.db` — обученные паттерны (reflection history, successful solutions)
 - `memory/feedback.db` — обратная связь
 - `memory/model_metrics.db` — метрики моделей
 
 ⚠️ Требует остановки проекта и подтверждения.
+
+**Связанные API:**
+- `GET /api/v1/learning/memory/stats` — статистика памяти
+- `GET /api/v1/learning/preferences` — предпочтения пользователя
+- `GET /api/v1/learning/memory/failed` — неудачные задачи
 
 ---
 

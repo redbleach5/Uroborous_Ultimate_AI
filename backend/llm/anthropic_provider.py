@@ -124,7 +124,7 @@ class AnthropicProvider(BaseLLMProvider):
                         }
                         logger.debug(f"Using thinking mode for model {model_name} with budget {thinking_budget}")
                     else:
-                        logger.warning(f"Thinking mode requested but SDK may not support it")
+                        logger.warning("Thinking mode requested but SDK may not support it")
                 except Exception as e:
                     logger.warning(f"Failed to enable thinking mode: {e}, continuing without it")
             

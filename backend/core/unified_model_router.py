@@ -22,10 +22,10 @@ UnifiedModelRouter - Единая точка входа для выбора мо
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List
 
 from .logger import get_logger
-from .types import ComplexityLevel, ModelTier
+from .types import ModelTier
 from .task_complexity_service import get_complexity_service
 from .intelligent_model_router import IntelligentModelRouter, ScoredModel, ModelCapability
 from .model_performance_tracker import get_performance_tracker
@@ -181,9 +181,8 @@ class UnifiedModelRouter(IModelRouter):
         if not complexity:
             complexity_result = self.complexity_service.analyze(task, task_type=task_type)
             complexity = complexity_result.level.value
-            estimated_time = complexity_result.estimated_minutes
         else:
-            estimated_time = self._tokens_map.get(complexity, 2000) / 50  # ~50 tokens/sec
+            self._tokens_map.get(complexity, 2000) / 50  # ~50 tokens/sec
         
         # 2. Определяем тип задачи если не указан
         if not task_type:

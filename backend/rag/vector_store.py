@@ -6,7 +6,7 @@ import os
 import sys
 import pickle
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 import numpy as np
 from ..core.logger import get_logger
 logger = get_logger(__name__)
@@ -93,7 +93,6 @@ class VectorStore:
                 # Set environment variables BEFORE importing/loading SentenceTransformer
                 # This prevents multiprocessing/threading issues
                 import os
-                import sys
                 os.environ.setdefault('TORCH_MULTIPROCESSING', '0')
                 os.environ.setdefault('TOKENIZERS_PARALLELISM', 'false')
                 os.environ.setdefault('OMP_NUM_THREADS', '1')

@@ -6,7 +6,6 @@ Models router - API для управления моделями LLM
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
-from datetime import datetime
 
 from backend.core.logger import get_logger
 
@@ -214,7 +213,7 @@ def _extract_model_size(model_name: str) -> Optional[str]:
 def _get_model_info(model_name: str, provider: str = "ollama") -> ModelInfo:
     """Получает информацию о модели"""
     # Нормализуем имя (убираем :latest и т.п.)
-    base_name = model_name.split(":")[0] if ":" in model_name else model_name
+    model_name.split(":")[0] if ":" in model_name else model_name
     full_name = model_name.lower()
     
     # Ищем в базе данных

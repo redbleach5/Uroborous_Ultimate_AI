@@ -8,7 +8,6 @@ Resource-Aware Model Selector - Адаптивный выбор модели п�
 - Fallback на альтернативные модели/серверы
 """
 
-import asyncio
 import time
 from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass, field

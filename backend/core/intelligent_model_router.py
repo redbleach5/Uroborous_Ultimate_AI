@@ -11,12 +11,12 @@ import re
 import asyncio
 import threading
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional
 from enum import Enum
 import httpx
 
 from .logger import get_logger
-from .model_performance_tracker import get_performance_tracker, ModelPerformanceTracker
+from .model_performance_tracker import get_performance_tracker
 from .constants import (
     CapabilityThresholds, ScoringWeights, PerformanceThresholds,
     ModelAdjustments, Timeouts
@@ -500,7 +500,7 @@ class IntelligentModelRouter:
     
     def get_all_models_ranked(self, task_type: str = "chat") -> List[Dict[str, Any]]:
         """Возвращает все модели с их рейтингами"""
-        requirements = TaskRequirements.from_task_analysis("", task_type, "simple")
+        TaskRequirements.from_task_analysis("", task_type, "simple")
         
         results = []
         for server_name, server_info in self._servers.items():

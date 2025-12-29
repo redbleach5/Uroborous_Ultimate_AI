@@ -351,7 +351,7 @@ class SmartProjectAnalyzer:
                 for item in sorted(current.iterdir(), key=lambda x: (not x.is_dir(), x.name)):
                     if item.name.startswith('.') or item.name in self.IGNORE_DIRS:
                         continue
-                    rel = item.relative_to(path)
+                    item.relative_to(path)
                     if item.is_dir():
                         context["structure"].append(f"{'  ' * depth}📁 {item.name}/")
                         collect_files(item, depth + 1)

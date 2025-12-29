@@ -24,6 +24,12 @@ from .unified_model_router import (
     IModelRouter,
 )
 
+# NOTE: code_validator и multi_agent_synthesis НЕ экспортируются здесь,
+# т.к. они зависят от llm.providers, что создаёт циклический импорт.
+# Импортируйте их напрямую:
+#   from backend.core.code_validator import CodeValidator, get_code_validator
+#   from backend.core.multi_agent_synthesis import MultiAgentSynthesizer, get_multi_agent_synthesizer
+
 __all__ = [
     # Logger
     'get_logger', 

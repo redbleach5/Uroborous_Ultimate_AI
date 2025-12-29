@@ -8,7 +8,7 @@ Progress Tracker - система отслеживания прогресса о
 """
 
 import asyncio
-from typing import Dict, Any, Optional, List, Callable, AsyncIterator
+from typing import Dict, Any, Optional, List, AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum

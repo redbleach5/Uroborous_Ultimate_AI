@@ -6,13 +6,11 @@ import httpx
 import re
 import asyncio
 import random
-from typing import Dict, Any, List, Optional, Callable, TypeVar
+from typing import Dict, Any, List, Callable, TypeVar
 from ..core.logger import get_logger
 logger = get_logger(__name__)
 
 from .base import BaseTool, ToolOutput
-from ..core.exceptions import ToolException
-from ..safety.guard import SafetyGuard
 
 
 # Try to use ddgs library (renamed from duckduckgo-search)

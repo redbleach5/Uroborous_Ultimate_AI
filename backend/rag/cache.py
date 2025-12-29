@@ -8,7 +8,6 @@ logger = get_logger(__name__)
 import hashlib
 import json
 import time
-from functools import lru_cache
 
 
 class RAGCache:

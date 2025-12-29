@@ -4,7 +4,7 @@ ReactAgent - ReAct (Reasoning + Acting) agent for interactive problem solving
 
 import json
 import re
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any
 from ..core.logger import get_logger
 logger = get_logger(__name__)
 
@@ -84,7 +84,7 @@ You can use tools multiple times. Always think before acting."""
             messages.append(LLMMessage(role="assistant", content=response))
             
             # Parse response for Thought/Action/Action Input
-            thought_match = re.search(r"Thought:\s*(.+?)(?=Action:|Final Answer:|$)", response, re.DOTALL)
+            re.search(r"Thought:\s*(.+?)(?=Action:|Final Answer:|$)", response, re.DOTALL)
             action_match = re.search(r"Action:\s*(\w+)", response)
             action_input_match = re.search(r"Action Input:\s*(.+?)(?=Observation:|$)", response, re.DOTALL)
             final_answer_match = re.search(r"Final Answer:\s*(.+?)$", response, re.DOTALL)

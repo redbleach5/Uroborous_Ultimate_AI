@@ -8,7 +8,6 @@ from ..core.logger import get_logger
 logger = get_logger(__name__)
 
 from .base import BaseTool, ToolOutput
-from ..core.exceptions import ToolException
 
 
 class ExecuteCommandTool(BaseTool):

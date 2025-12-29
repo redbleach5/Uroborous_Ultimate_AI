@@ -625,6 +625,24 @@ export interface UseCodeExecutorReturn {
 export function useCodeExecutor(): UseCodeExecutorReturn {
   const [runningCodeId, setRunningCodeId] = React.useState<string | null>(null);
   const [executionResults, setExecutionResults] = React.useState<Record<string, CodeExecutionResult>>({});
+  
+  // Track blob URLs for cleanup - prevents memory leaks
+  const blobUrlsRef = React.useRef<Set<string>>(new Set());
+  
+  // Helper to cleanup a specific blob URL
+  const cleanupBlobUrl = React.useCallback((url: string | null) => {
+    if (url && url.startsWith('blob:') && blobUrlsRef.current.has(url)) {
+      URL.revokeObjectURL(url);
+      blobUrlsRef.current.delete(url);
+    }
+  }, []);
+  
+  // Helper to create and track a blob URL
+  const createTrackedBlobUrl = React.useCallback((blob: Blob): string => {
+    const url = URL.createObjectURL(blob);
+    blobUrlsRef.current.add(url);
+    return url;
+  }, []);
 
   const downloadCode = (code: string, filename: string = 'generated_code.py') => {
     const blob = new Blob([code], { type: 'text/plain' });
@@ -640,6 +658,13 @@ export function useCodeExecutor(): UseCodeExecutorReturn {
 
   const handleRunCode = async (code: string, messageId: string, files?: any[], conversationMessages?: any[]) => {
     setRunningCodeId(messageId);
+    
+    // Cleanup previous blob URL for this message to prevent memory leaks
+    const previousResult = executionResults[messageId];
+    if (previousResult?.htmlPreviewUrl) {
+      cleanupBlobUrl(previousResult.htmlPreviewUrl);
+    }
+    
     setExecutionResults(prev => ({ ...prev, [messageId]: { result: null, htmlPreviewUrl: null } }));
 
     try {
@@ -699,11 +724,11 @@ export function useCodeExecutor(): UseCodeExecutorReturn {
           processedCode = processedCode.replace(/<\/html>/i, '</body>\n</html>');
         }
         
-        // Create URL for rendering
+        // Create URL for rendering (tracked for cleanup to prevent memory leaks)
         let previewUrl: string;
         try {
           const blob = new Blob([processedCode], { type: 'text/html;charset=utf-8' });
-          previewUrl = URL.createObjectURL(blob);
+          previewUrl = createTrackedBlobUrl(blob);
         } catch {
           previewUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(processedCode);
         }
@@ -820,14 +845,19 @@ export function useCodeExecutor(): UseCodeExecutorReturn {
     }
   };
 
-  // Cleanup blob URLs on unmount
+  // Cleanup all tracked blob URLs on unmount to prevent memory leaks
   React.useEffect(() => {
+    const currentBlobUrls = blobUrlsRef.current;
     return () => {
-      Object.values(executionResults).forEach(result => {
-        if (result.htmlPreviewUrl && result.htmlPreviewUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(result.htmlPreviewUrl);
+      // Cleanup all tracked blob URLs
+      currentBlobUrls.forEach(url => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {
+          // Ignore errors during cleanup
         }
       });
+      currentBlobUrls.clear();
     };
   }, []);
 

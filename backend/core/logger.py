@@ -15,9 +15,7 @@ Unified logging system for AILLM
 from loguru import logger
 from pathlib import Path
 from typing import Dict, Any, Optional, Set
-from datetime import datetime
 import sys
-import json
 import contextvars
 import logging
 
@@ -328,7 +326,7 @@ class StructuredLogger:
         duration: Optional[float] = None
     ):
         """Логирование действия агента"""
-        cid = self._get_cid()
+        self._get_cid()
         dur_str = self._format_duration(duration)
         
         # Определяем статус
@@ -513,7 +511,7 @@ def log_exception(
         context: Дополнительный контекст
         level: Уровень логирования
     """
-    cid = get_correlation_id()
+    get_correlation_id()
     msg = f"Exception: {type(exc).__name__}: {exc}"
     if context:
         msg = f"{context} - {msg}"

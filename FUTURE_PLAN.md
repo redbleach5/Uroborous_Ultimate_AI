@@ -571,3 +571,45 @@ class SafetyCheckerMixin:
 - [x] Единый TaskComplexityAnalyzer ✅
 - [x] Консолидация типов (types.py) ✅
 - [x] UI/UX улучшения (модальные окна, ошибки) ✅
+
+### ✅ 29 декабря 2025 — Критические улучшения для качества кода
+- [x] **AST-based Code Intelligence** (`backend/project/code_intelligence.py`)
+  - Глубокий анализ структуры кода (функции, классы, методы)
+  - Построение графа зависимостей
+  - Вычисление цикломатической сложности
+  - Поддержка Python и JavaScript/TypeScript
+  
+- [x] **Semantic Code Search** (`backend/rag/semantic_code_search.py`)
+  - Семантический поиск по коду на естественном языке
+  - Re-ranking результатов через LLM
+  - Поиск по паттернам использования
+  - Поиск похожего кода
+  
+- [x] **Incremental Indexer** (`backend/project/incremental_indexer.py`)
+  - Отслеживание изменений файлов по hash
+  - Индексирование только изменённых файлов
+  - Персистентный кэш в SQLite
+  - Ускорение работы с большими проектами
+  
+- [x] **Enhanced Code Validator** (`backend/core/code_validator.py`)
+  - Интеграция с ruff для Python
+  - Расширенные проверки качества кода
+  - Автоматическое исправление через LLM
+  - Проверки безопасности (flake8-bandit)
+  
+- [x] **Self-Consistency Mixin** (`backend/agents/self_consistency_mixin.py`)
+  - Генерация N независимых ответов
+  - Голосование за консенсус
+  - Повышение надёжности для критических задач
+  - Оценка уверенности (confidence)
+  
+- [x] **Multi-Agent Synthesis** (`backend/core/multi_agent_synthesis.py`)
+  - Объединение результатов от нескольких агентов
+  - Стратегии: merge, select_best, consensus, debate
+  - Разрешение конфликтов через LLM
+  - Оценка качества синтеза
+  
+- [x] **Code Intelligence API** (`backend/api/routers/code_intelligence.py`)
+  - REST API для анализа проектов
+  - Эндпоинты для валидации кода
+  - Управление индексами

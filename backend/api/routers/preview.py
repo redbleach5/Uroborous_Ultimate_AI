@@ -6,8 +6,8 @@ Preview management endpoints:
 - proxy HTTP GET/HEAD to the preview (localhost port) with token check
 """
 
-import time
-from typing import Dict, Any, Optional
+import asyncio
+from typing import Dict, Optional
 
 import httpx
 import websockets

@@ -6,12 +6,13 @@ from typing import Dict, Any, Optional
 from ..core.logger import get_logger
 logger = get_logger(__name__)
 
+OPTUNA_AVAILABLE = False
 try:
     import optuna
     OPTUNA_AVAILABLE = True
-except ImportError:
-    OPTUNA_AVAILABLE = False
-    logger.warning("Optuna not available, hyperparameter optimization disabled")
+except (ImportError, OSError, TypeError) as e:
+    optuna = None
+    logger.warning(f"Optuna not available, hyperparameter optimization disabled: {e}")
 
 
 class HyperparameterOptimizer:

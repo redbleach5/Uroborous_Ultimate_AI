@@ -7,13 +7,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
 from pathlib import Path
-import os
-import mimetypes
-import asyncio
 import json
 
 from ...core.logger import get_logger
-from ...core.progress_tracker import get_progress_manager, ProgressTracker
+from ...core.progress_tracker import get_progress_manager
 
 logger = get_logger(__name__)
 
@@ -705,8 +702,8 @@ def _get_model_selection_explanation(
     """
     Объясняет почему выбрана данная модель на основе метрик проекта.
     """
-    model_name = model_info.get("model") or "неизвестная модель"
-    provider = model_info.get("provider") or "неизвестный провайдер"
+    model_info.get("model") or "неизвестная модель"
+    model_info.get("provider") or "неизвестный провайдер"
     is_local = model_info.get("is_local", False)
     
     # Формируем объяснение

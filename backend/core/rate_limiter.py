@@ -7,7 +7,6 @@ from typing import Dict, Optional, Tuple
 from collections import defaultdict
 from fastapi import Request, HTTPException, status
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
 from .logger import get_logger
 
 logger = get_logger(__name__)

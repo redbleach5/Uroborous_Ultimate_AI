@@ -20,7 +20,7 @@ from collections import defaultdict
 from ..core.logger import get_logger
 
 if TYPE_CHECKING:
-    from .base import BaseAgent, AgentRegistry
+    from .base import AgentRegistry
 
 logger = get_logger(__name__)
 

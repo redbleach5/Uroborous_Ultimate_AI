@@ -3,7 +3,6 @@ Metrics router
 """
 
 from fastapi import APIRouter, Request
-from typing import Optional
 
 from ...core.metrics import metrics_collector
 

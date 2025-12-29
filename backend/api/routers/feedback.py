@@ -146,7 +146,6 @@ async def submit_solution_feedback(
         if feedback.solution_id:
             try:
                 # Получаем engine из app state
-                from fastapi import Request
                 if hasattr(request, 'app') and hasattr(request.app, 'state'):
                     engine = getattr(request.app.state, 'engine', None)
                     if engine and hasattr(engine, 'memory') and engine.memory:

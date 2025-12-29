@@ -1,5 +1,10 @@
 """
 Orchestrator - Decomposes tasks, plans execution, and coordinates agents
+
+Enhanced with:
+- Multi-Agent Synthesis for combining results
+- Better task routing and model selection
+- Adaptive timeouts based on task complexity
 """
 
 import asyncio
@@ -21,6 +26,12 @@ from .core.resource_aware_selector import ResourceAwareSelector
 from .core.prompt_optimizer import PromptOptimizer
 from .core.time_estimator import TimeEstimator
 from .core.pydantic_utils import pydantic_to_dict
+from .core.multi_agent_synthesis import (
+    MultiAgentSynthesizer, 
+    AgentResult, 
+    SynthesisStrategy,
+    get_multi_agent_synthesizer
+)
 
 
 class Orchestrator:
@@ -64,6 +75,11 @@ class Orchestrator:
         self.resource_aware_selector = ResourceAwareSelector(llm_manager, self.full_config) if llm_manager else None
         self.prompt_optimizer = PromptOptimizer()
         self.time_estimator = TimeEstimator()
+        
+        # Multi-Agent Synthesizer для объединения результатов от нескольких агентов
+        self.synthesizer: Optional[MultiAgentSynthesizer] = None
+        if llm_manager:
+            self.synthesizer = get_multi_agent_synthesizer(llm_manager)
     
     async def initialize(self) -> None:
         """Initialize orchestrator"""
@@ -155,15 +171,14 @@ class Orchestrator:
                 logger.warning(f"Adaptive selection failed: {e}")
         
         # Check memory for similar tasks (with quality scores)
-        similar_solutions = []
         if self.memory:
             # Используем улучшенный поиск с учетом качества решений
             if hasattr(self.memory, 'search_similar_tasks_with_quality'):
-                similar_solutions = await self.memory.search_similar_tasks_with_quality(
+                await self.memory.search_similar_tasks_with_quality(
                     task, top_k=5, min_quality=20.0  # Минимум 20% качества
                 )
             else:
-                similar_solutions = await self.memory.search_similar_tasks(task)
+                await self.memory.search_similar_tasks(task)
         
         # Теперь НЕ форсируем агента на основе ключевых слов
         # Вся логика классификации делегирована LLMClassifier в _select_agent()
@@ -784,6 +799,51 @@ Respond with ONLY the agent name (e.g., "code_writer", "research", etc.), no exp
                         "success": False,
                         "index": i
                     })
+        
+        # Synthesize results from multiple agents if we have successful results
+        successful_results = [r for r in results if r.get("success", False)]
+        
+        if len(successful_results) > 1 and self.synthesizer:
+            try:
+                # Convert to AgentResult format
+                agent_results = []
+                for r in successful_results:
+                    result_data = r.get("result", {})
+                    agent_results.append(AgentResult(
+                        agent_name=result_data.get("agent", "unknown"),
+                        agent_type=result_data.get("agent", "unknown"),
+                        result=result_data,
+                        success=True,
+                        confidence=0.7
+                    ))
+                
+                # Get original task from first subtask or context
+                original_task = subtasks[0] if subtasks else "multi-agent task"
+                
+                # Synthesize
+                synthesis = await self.synthesizer.synthesize(
+                    results=agent_results,
+                    original_task=original_task,
+                    strategy=SynthesisStrategy.MERGE
+                )
+                
+                logger.info(
+                    f"Multi-agent synthesis complete: "
+                    f"confidence={synthesis.confidence:.2f}, "
+                    f"quality={synthesis.quality_score:.2f}"
+                )
+                
+                return {
+                    "subtasks": subtasks,
+                    "results": results,
+                    "success": all(r.get("success", False) for r in results),
+                    "context_accumulated": not execute_parallel,
+                    "synthesized_result": synthesis.synthesized_content,
+                    "synthesis_metadata": synthesis.to_dict()
+                }
+                
+            except Exception as e:
+                logger.warning(f"Multi-agent synthesis failed: {e}")
         
         return {
             "subtasks": subtasks,

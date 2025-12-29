@@ -3,7 +3,7 @@
 Заменяет эвристики на интеллектуальную LLM-классификацию
 """
 
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 import asyncio
 import json
 import hashlib
@@ -288,7 +288,6 @@ JSON ответ:"""
                 }
         
         # Явные маркеры генерации кода (высокий приоритет)
-        code_gen_with_target = False
         gen_words = ["напиши", "создай", "сгенерируй", "generate", "create", "build", "make"]
         code_targets = ["код", "code", "игру", "game", "приложение", "app", "скрипт", "script", 
                        "функцию", "function", "класс", "class", "бот", "bot", "сайт", "site"]

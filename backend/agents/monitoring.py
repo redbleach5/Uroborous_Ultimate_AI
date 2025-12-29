@@ -2,7 +2,7 @@
 MonitoringAgent - Monitors system performance and metrics
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from datetime import datetime
 from ..core.logger import get_logger
 logger = get_logger(__name__)

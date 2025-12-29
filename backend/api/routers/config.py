@@ -126,8 +126,7 @@ def deep_merge(base: Dict[str, Any], update: Dict[str, Any]) -> Dict[str, Any]:
 async def update_config(config_update: Dict[str, Any], request: Request):
     """Обновить конфигурацию динамически без перезапуска"""
     try:
-        from backend.config import get_config as load_current_config, reload_config, Config
-        import os
+        from backend.config import reload_config
 
         # Получаем engine из app state
         engine = request.app.state.engine
@@ -165,7 +164,7 @@ async def update_config(config_update: Dict[str, Any], request: Request):
             try:
                 with config_path.open("r", encoding="utf-8") as f:
                     existing_config = yaml.safe_load(f) or {}
-            except Exception as e:
+            except Exception:
                 # Если не удалось загрузить существующий файл, начинаем с пустого
                 existing_config = {}
 
@@ -251,6 +250,5 @@ async def update_config(config_update: Dict[str, Any], request: Request):
         }
     except Exception as e:
         from fastapi import HTTPException
-        import traceback
         raise HTTPException(status_code=500, detail=f"Ошибка обновления конфигурации: {str(e)}")
 

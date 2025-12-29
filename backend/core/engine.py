@@ -3,7 +3,7 @@ Core Engine (IDAEngine) - Central coordinator for all components
 """
 
 import asyncio
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from pathlib import Path
 
 from ..config import get_config, Config
@@ -11,7 +11,7 @@ from .logger import get_logger
 
 # Инициализируем логгер для этого модуля
 logger = get_logger(__name__)
-from .exceptions import AILLMException, ConfigurationException
+from .exceptions import AILLMException
 from ..llm.providers import LLMProviderManager
 from ..rag.vector_store import VectorStore
 from ..rag.context_manager import ContextManager
@@ -22,9 +22,9 @@ from ..safety.guard import SafetyGuard
 from ..memory.long_term import LongTermMemory
 from .metrics import metrics_collector
 from .batch_processor import BatchProcessor
-from .intelligent_monitor import get_monitor, initialize_monitor, IssueSeverity
+from .intelligent_monitor import initialize_monitor, IssueSeverity
 from .pydantic_utils import pydantic_to_dict
-from .learning_system import get_learning_system, initialize_learning_system, LearningSystem
+from .learning_system import initialize_learning_system, LearningSystem
 from .resource_aware_selector import ResourceAwareSelector
 from .easter_eggs import startup_birthday_check
 
@@ -489,7 +489,7 @@ class IDAEngine:
                     )
             
             return result
-        except Exception as e:
+        except Exception:
             # Track error in metrics
             duration = time.time() - start_time
             if track_metrics:
@@ -608,7 +608,7 @@ class IDAEngine:
         if self._initialized:
             try:
                 # Попытаться получить текущий event loop
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 # Если loop уже запущен, НЕ вызываем shutdown() здесь
                 # Это вызовет RuntimeError: asyncio.run() cannot be called from a running event loop
                 logger.debug(

@@ -7,13 +7,12 @@ import ast
 import sys
 import io
 import traceback
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any
 from ..core.logger import get_logger
 logger = get_logger(__name__)
 
 from .base import BaseAgent
 from ..llm.base import LLMMessage
-from ..core.exceptions import AgentException
 
 
 class WorkflowAgent(BaseAgent):

@@ -3,7 +3,7 @@ Prompt Optimizer - Оптимизация промптов для малых м�
 Минимизирует потерю качества при работе с ограниченными ресурсами
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 from .logger import get_logger
 logger = get_logger(__name__)
 

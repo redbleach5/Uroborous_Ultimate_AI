@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from .logger import get_logger
 logger = get_logger(__name__)
 
-from .exceptions import AILLMException
 
 
 @dataclass

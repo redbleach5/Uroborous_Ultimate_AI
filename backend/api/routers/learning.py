@@ -5,17 +5,33 @@ Learning API - Доступ к статистике обучения агент�
 - Получать статистику обучения по агентам
 - Просматривать накопленный опыт
 - Анализировать эффективность обучения
+- Управлять пользовательскими предпочтениями
+- Получать рекомендации по моделям
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 from typing import Dict, Any, Optional
 
 from ...core.logger import get_logger
-from ...core.learning_system import get_learning_system, initialize_learning_system
+from ...core.learning_system import initialize_learning_system
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/learning", tags=["learning"])
+
+
+class UserPreference(BaseModel):
+    """Модель для установки пользовательского предпочтения"""
+    key: str
+    value: Any
+    user_id: str = "default"
+
+
+class UserPreferencesUpdate(BaseModel):
+    """Модель для массового обновления предпочтений"""
+    preferences: Dict[str, Any]
+    user_id: str = "default"
 
 
 @router.get("/stats", summary="Получить глобальную статистику обучения")
@@ -181,5 +197,270 @@ async def get_learning_progress() -> Dict[str, Any]:
         
     except Exception as e:
         logger.error(f"Failed to get learning progress: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== USER PREFERENCES ====================
+
+@router.get("/preferences", summary="Получить предпочтения пользователя")
+async def get_user_preferences(
+    request: Request,
+    user_id: str = "default"
+) -> Dict[str, Any]:
+    """
+    Получает все сохраненные предпочтения пользователя.
+    
+    Args:
+        user_id: ID пользователя (default для общих настроек)
+    
+    Returns:
+        Словарь с предпочтениями пользователя
+    """
+    try:
+        engine = getattr(request.app.state, "engine", None)
+        if not engine or not engine.memory:
+            return {
+                "success": True,
+                "user_id": user_id,
+                "preferences": {},
+                "message": "Memory system not initialized"
+            }
+        
+        preferences = await engine.memory.get_all_user_preferences(user_id)
+        
+        return {
+            "success": True,
+            "user_id": user_id,
+            "preferences": preferences
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get user preferences: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/preferences", summary="Установить предпочтение пользователя")
+async def set_user_preference(
+    request: Request,
+    pref: UserPreference
+) -> Dict[str, Any]:
+    """
+    Устанавливает предпочтение пользователя.
+    
+    Доступные ключи:
+    - language: "ru" или "en"
+    - code_style: "pythonic", "verbose", "minimal"
+    - detail_level: "brief", "detailed", "exhaustive"
+    - preferred_frameworks: ["fastapi", "django", ...]
+    - response_format: "markdown", "plain"
+    
+    Args:
+        pref: Объект с ключом, значением и user_id
+    
+    Returns:
+        Подтверждение сохранения
+    """
+    try:
+        engine = getattr(request.app.state, "engine", None)
+        if not engine or not engine.memory:
+            raise HTTPException(status_code=503, detail="Memory system not initialized")
+        
+        await engine.memory.save_user_preference(
+            key=pref.key,
+            value=pref.value,
+            user_id=pref.user_id
+        )
+        
+        return {
+            "success": True,
+            "message": f"Preference '{pref.key}' saved",
+            "user_id": pref.user_id,
+            "key": pref.key,
+            "value": pref.value
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to set user preference: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/preferences", summary="Обновить несколько предпочтений")
+async def update_user_preferences(
+    request: Request,
+    prefs: UserPreferencesUpdate
+) -> Dict[str, Any]:
+    """
+    Обновляет несколько предпочтений пользователя за один запрос.
+    
+    Args:
+        prefs: Объект со словарем предпочтений и user_id
+    
+    Returns:
+        Подтверждение сохранения
+    """
+    try:
+        engine = getattr(request.app.state, "engine", None)
+        if not engine or not engine.memory:
+            raise HTTPException(status_code=503, detail="Memory system not initialized")
+        
+        for key, value in prefs.preferences.items():
+            await engine.memory.save_user_preference(
+                key=key,
+                value=value,
+                user_id=prefs.user_id
+            )
+        
+        return {
+            "success": True,
+            "message": f"Updated {len(prefs.preferences)} preferences",
+            "user_id": prefs.user_id,
+            "keys": list(prefs.preferences.keys())
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update user preferences: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== MEMORY STATS ====================
+
+@router.get("/memory/stats", summary="Получить статистику памяти")
+async def get_memory_stats(request: Request) -> Dict[str, Any]:
+    """
+    Получает полную статистику долгосрочной памяти.
+    
+    Returns:
+        Статистика включая:
+        - Количество сохраненных решений
+        - Количество failed задач
+        - Рекомендации моделей по типам задач
+    """
+    try:
+        engine = getattr(request.app.state, "engine", None)
+        if not engine or not engine.memory:
+            return {
+                "success": True,
+                "stats": {},
+                "message": "Memory system not initialized"
+            }
+        
+        stats = await engine.memory.get_learning_stats()
+        model_recommendations = await engine.memory.get_model_task_recommendations()
+        
+        return {
+            "success": True,
+            "stats": stats,
+            "model_recommendations": model_recommendations
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get memory stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/memory/models", summary="Получить рекомендации моделей")
+async def get_model_recommendations(
+    request: Request,
+    task_type: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Получает рекомендации моделей на основе исторической производительности.
+    
+    Args:
+        task_type: Опциональный фильтр по типу задачи (code, chat, analysis, reasoning, creative)
+    
+    Returns:
+        Рекомендации моделей с метриками
+    """
+    try:
+        engine = getattr(request.app.state, "engine", None)
+        if not engine or not engine.memory:
+            return {
+                "success": True,
+                "recommendations": {},
+                "message": "Memory system not initialized"
+            }
+        
+        if task_type:
+            best = await engine.memory.get_best_model_for_task_type(task_type)
+            return {
+                "success": True,
+                "task_type": task_type,
+                "recommendation": best
+            }
+        else:
+            recommendations = await engine.memory.get_model_task_recommendations()
+            return {
+                "success": True,
+                "recommendations": recommendations
+            }
+        
+    except Exception as e:
+        logger.error(f"Failed to get model recommendations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/memory/failed", summary="Получить failed задачи")
+async def get_failed_tasks(
+    request: Request,
+    agent: Optional[str] = None,
+    limit: int = 20
+) -> Dict[str, Any]:
+    """
+    Получает список неудачных задач для анализа.
+    
+    Args:
+        agent: Опциональный фильтр по агенту
+        limit: Максимальное количество записей
+    
+    Returns:
+        Список failed задач с информацией об ошибках
+    """
+    try:
+        engine = getattr(request.app.state, "engine", None)
+        if not engine or not engine.memory:
+            return {
+                "success": True,
+                "failed_tasks": [],
+                "message": "Memory system not initialized"
+            }
+        
+        # Query failed tasks directly
+        query = "SELECT task, agent, error_type, error_message, occurrence_count, created_at FROM failed_tasks"
+        params = []
+        if agent:
+            query += " WHERE agent = ?"
+            params.append(agent)
+        query += " ORDER BY occurrence_count DESC, created_at DESC LIMIT ?"
+        params.append(limit)
+        
+        cursor = await engine.memory.db.execute(query, params)
+        rows = await cursor.fetchall()
+        await cursor.close()
+        
+        failed_tasks = [
+            {
+                "task": row[0][:200] + "..." if len(row[0]) > 200 else row[0],
+                "agent": row[1],
+                "error_type": row[2],
+                "error_message": row[3],
+                "occurrence_count": row[4],
+                "created_at": row[5]
+            }
+            for row in rows
+        ]
+        
+        return {
+            "success": True,
+            "count": len(failed_tasks),
+            "failed_tasks": failed_tasks
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get failed tasks: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 

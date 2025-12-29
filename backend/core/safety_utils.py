@@ -5,7 +5,7 @@ Safety utilities for preventing crashes
 import signal
 import sys
 from functools import wraps
-from typing import Callable, Any
+from typing import Callable
 from .logger import get_logger
 logger = get_logger(__name__)
 

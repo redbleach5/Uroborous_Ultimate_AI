@@ -2,11 +2,8 @@
 Multimodal router - Image, audio, video processing
 """
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-from typing import Optional
-import tempfile
-import os
 
 router = APIRouter()
 

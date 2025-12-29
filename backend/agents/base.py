@@ -122,6 +122,17 @@ class BaseAgent(ABC, ReflectionMixin, UncertaintySearchMixin):
         start_time = time.time()
         ctx = context or {}
         
+        # === INTELLIGENT MODEL SELECTION ===
+        # If no preferred_model in context, try to get recommended model from memory
+        if "preferred_model" not in ctx and self.memory:
+            try:
+                recommended = await self.get_recommended_model()
+                if recommended:
+                    ctx["_memory_recommended_model"] = recommended
+                    logger.debug(f"Agent {self.name}: Memory recommends model: {recommended}")
+            except Exception as e:
+                logger.debug(f"Agent {self.name}: Could not get model recommendation: {e}")
+        
         # Сохраняем контекст для distributed routing (чтобы _get_llm_response мог использовать)
         self._current_execution_context = ctx
         
@@ -154,6 +165,28 @@ class BaseAgent(ABC, ReflectionMixin, UncertaintySearchMixin):
             duration = time.time() - start_time
             result["_execution_time"] = duration
             
+            # === RECORD SUCCESS TO MEMORY ===
+            if result.get("success", True) and self.memory:
+                try:
+                    # Get the solution from result
+                    solution = (
+                        result.get("code") or 
+                        result.get("final_answer") or 
+                        result.get("analysis") or 
+                        result.get("report") or 
+                        str(result.get("result", ""))[:1000]
+                    )
+                    if solution and len(solution) > 50:  # Only save non-trivial solutions
+                        model_used = ctx.get("preferred_model") or self.default_model
+                        await self.save_to_memory(
+                            task=task[:500],
+                            solution=solution[:2000],
+                            metadata={"duration": duration, "reflection": result.get("_reflection")},
+                            model_used=model_used
+                        )
+                except Exception as e:
+                    logger.debug(f"Agent {self.name}: Could not save to memory: {e}")
+            
             structured_logger.log_agent_action(
                 agent_name=self.name,
                 action="execute_complete",
@@ -167,6 +200,18 @@ class BaseAgent(ABC, ReflectionMixin, UncertaintySearchMixin):
             
         except Exception as e:
             duration = time.time() - start_time
+            
+            # === RECORD FAILURE TO MEMORY ===
+            try:
+                await self.record_failure(
+                    task=task[:500],
+                    error_type=type(e).__name__,
+                    error_message=str(e)[:500],
+                    error_context={"duration": duration, "context_keys": list(ctx.keys())}
+                )
+            except Exception as record_error:
+                logger.debug(f"Agent {self.name}: Could not record failure: {record_error}")
+            
             structured_logger.log_agent_action(
                 agent_name=self.name,
                 action="execute_error",
@@ -475,15 +520,22 @@ Current time: {self._get_current_datetime_info()}"""
         messages: List[LLMMessage],
         provider: Optional[str] = None,
         use_thinking: Optional[bool] = None,
+        include_few_shot: bool = True,
+        include_personalization: bool = True,
+        include_error_warnings: bool = True,
         **kwargs
     ) -> str:
         """
-        Get response from LLM
+        Get response from LLM with automatic few-shot examples injection,
+        personalization, and error warnings.
         
         Args:
             messages: List of messages
             provider: Provider name (None = use default, "ollama" = prioritize Ollama)
             use_thinking: Override thinking mode (if None, uses agent config)
+            include_few_shot: Whether to include few-shot examples from memory (default True)
+            include_personalization: Whether to include user preferences (default True)
+            include_error_warnings: Whether to include warnings about past errors (default True)
             **kwargs: Additional parameters
         """
         if not self.llm_manager:
@@ -514,6 +566,45 @@ Current time: {self._get_current_datetime_info()}"""
                 role="system",
                 content=f"Текущая дата и время: {current_datetime}. Используйте эту информацию для предоставления актуальных данных."
             ))
+        
+        # Extract task from user messages for memory queries
+        task_text = ""
+        for msg in messages:
+            if msg.role == "user":
+                task_text = msg.content
+                break
+        
+        # === FULL LONGTTERMMEMORY INTEGRATION ===
+        if self.memory and task_text:
+            memory_enhancements = []
+            
+            # 1. Персонализация на основе предпочтений пользователя
+            if include_personalization:
+                personalization = await self._get_personalization_prompt()
+                if personalization:
+                    memory_enhancements.append(personalization)
+            
+            # 2. Предупреждения об ошибках на похожих задачах
+            if include_error_warnings:
+                error_warnings = await self._get_error_warnings(task_text)
+                if error_warnings:
+                    memory_enhancements.append(error_warnings)
+            
+            # 3. Few-shot примеры из успешных решений
+            if include_few_shot:
+                enhanced_messages = await self._enhance_prompt_with_examples(
+                    enhanced_messages, task_text
+                )
+            
+            # Добавляем все улучшения в системный промпт
+            if memory_enhancements:
+                for i, msg in enumerate(enhanced_messages):
+                    if msg.role == "system":
+                        enhanced_messages[i] = LLMMessage(
+                            role=msg.role,
+                            content=msg.content + "\n".join(memory_enhancements)
+                        )
+                        break
         
         # PRIORITY: Если provider не указан, приоритизируем Ollama
         if provider is None:
@@ -568,6 +659,126 @@ Current time: {self._get_current_datetime_info()}"""
             return await self.context_manager.get_context(query)
         return ""
     
+    async def _get_few_shot_examples(
+        self,
+        task: str,
+        max_examples: int = 2,
+        min_quality: float = 50.0
+    ) -> str:
+        """
+        Get few-shot examples from LongTermMemory for improved prompt quality.
+        
+        This significantly improves response quality by providing successful
+        examples of similar tasks to the LLM.
+        
+        Args:
+            task: Current task description
+            max_examples: Maximum number of examples to include
+            min_quality: Minimum quality score (0-100) for examples
+            
+        Returns:
+            Formatted few-shot examples string or empty string if none found
+        """
+        if not self.memory:
+            return ""
+        
+        try:
+            # Search for high-quality similar solutions
+            similar_tasks = await self.memory.search_similar_tasks_with_quality(
+                task=task,
+                top_k=max_examples,
+                min_quality=min_quality
+            )
+            
+            if not similar_tasks:
+                logger.debug(f"Agent {self.name}: No few-shot examples found for task")
+                return ""
+            
+            # Format examples for prompt
+            examples_text = "\n\n### SUCCESSFUL EXAMPLES FROM PREVIOUS TASKS:\n"
+            examples_text += "(Use these as reference for similar solutions)\n"
+            
+            for i, item in enumerate(similar_tasks, 1):
+                task_text = item.get("task", "")[:300]  # Limit task length
+                solution_text = item.get("solution", "")[:800]  # Limit solution length
+                quality = item.get("quality_score", 0)
+                similarity = item.get("similarity", 0)
+                
+                examples_text += f"\n**Example {i}** (quality: {quality:.0f}%, similarity: {similarity:.0%}):\n"
+                examples_text += f"Task: {task_text}\n"
+                
+                # Truncate solution if too long
+                if len(item.get("solution", "")) > 800:
+                    examples_text += f"Solution (truncated):\n{solution_text}...\n"
+                else:
+                    examples_text += f"Solution:\n{solution_text}\n"
+            
+            examples_text += "\n### END OF EXAMPLES\n"
+            examples_text += "Now solve the current task, using the examples as reference if helpful.\n"
+            
+            logger.info(
+                f"Agent {self.name}: Added {len(similar_tasks)} few-shot examples "
+                f"(avg quality: {sum(t.get('quality_score', 0) for t in similar_tasks) / len(similar_tasks):.0f}%)"
+            )
+            
+            return examples_text
+            
+        except Exception as e:
+            logger.warning(f"Agent {self.name}: Failed to get few-shot examples: {e}")
+            return ""
+    
+    async def _enhance_prompt_with_examples(
+        self,
+        messages: List[LLMMessage],
+        task: str
+    ) -> List[LLMMessage]:
+        """
+        Enhance messages with few-shot examples from memory.
+        
+        Adds examples to the system prompt or as a separate message.
+        
+        Args:
+            messages: Original list of messages
+            task: Current task for finding similar examples
+            
+        Returns:
+            Enhanced messages with few-shot examples
+        """
+        # Get few-shot examples
+        examples = await self._get_few_shot_examples(task)
+        
+        if not examples:
+            return messages
+        
+        # Find system message and enhance it
+        enhanced_messages = []
+        system_enhanced = False
+        
+        for msg in messages:
+            if msg.role == "system" and not system_enhanced:
+                # Add examples to system prompt
+                enhanced_content = msg.content + examples
+                enhanced_messages.append(LLMMessage(
+                    role=msg.role,
+                    content=enhanced_content
+                ))
+                system_enhanced = True
+            else:
+                enhanced_messages.append(msg)
+        
+        # If no system message, add examples as first user context
+        if not system_enhanced and enhanced_messages:
+            # Insert examples before the last user message
+            for i in range(len(enhanced_messages) - 1, -1, -1):
+                if enhanced_messages[i].role == "user":
+                    enhanced_messages[i] = LLMMessage(
+                        role="user",
+                        content=examples + "\n\n" + enhanced_messages[i].content
+                    )
+                    break
+        
+        return enhanced_messages
+    
     def _get_current_datetime_info(self) -> str:
         """
         Получить информацию о текущей дате и времени для использования в промптах
@@ -598,6 +809,135 @@ Current time: {self._get_current_datetime_info()}"""
         time_str = now.strftime("%H:%M:%S")
         
         return f"{weekday}, {date_str}, {time_str} (UTC{now.strftime('%z')})"
+    
+    # ==================== LONGTTERMMEMORY INTEGRATION ====================
+    
+    async def _get_personalization_prompt(self, user_id: str = "default") -> str:
+        """
+        Получить персонализированные инструкции на основе предпочтений пользователя.
+        
+        Returns:
+            Персонализированные инструкции для промпта или пустая строка
+        """
+        if not self.memory:
+            return ""
+        
+        try:
+            return await self.memory.get_personalization_prompt(user_id)
+        except Exception as e:
+            logger.warning(f"Agent {self.name}: Failed to get personalization: {e}")
+            return ""
+    
+    async def _get_error_warnings(self, task: str) -> str:
+        """
+        Получить предупреждения о прошлых ошибках на похожих задачах.
+        
+        Args:
+            task: Текущая задача
+            
+        Returns:
+            Предупреждения для промпта или пустая строка
+        """
+        if not self.memory:
+            return ""
+        
+        try:
+            return await self.memory.get_error_avoidance_prompt(task, agent=self.name)
+        except Exception as e:
+            logger.warning(f"Agent {self.name}: Failed to get error warnings: {e}")
+            return ""
+    
+    async def save_to_memory(
+        self,
+        task: str,
+        solution: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        model_used: Optional[str] = None
+    ) -> Optional[int]:
+        """
+        Сохранить решение в долгосрочную память.
+        
+        Args:
+            task: Описание задачи
+            solution: Решение
+            metadata: Дополнительные метаданные
+            model_used: Модель, которая сгенерировала решение
+            
+        Returns:
+            ID сохраненной записи или None
+        """
+        if not self.memory:
+            return None
+        
+        try:
+            task_type = self._determine_task_type()
+            return await self.memory.save_solution(
+                task=task,
+                solution=solution,
+                agent=self.name,
+                metadata=metadata,
+                task_type=task_type,
+                model_used=model_used
+            )
+        except Exception as e:
+            logger.warning(f"Agent {self.name}: Failed to save to memory: {e}")
+            return None
+    
+    async def record_failure(
+        self,
+        task: str,
+        error_type: str,
+        error_message: str,
+        error_context: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Записать неудачную задачу для предотвращения повторных ошибок.
+        
+        Args:
+            task: Описание задачи
+            error_type: Тип ошибки
+            error_message: Сообщение об ошибке
+            error_context: Контекст ошибки
+        """
+        if not self.memory:
+            return
+        
+        try:
+            await self.memory.save_failed_task(
+                task=task,
+                agent=self.name,
+                error_type=error_type,
+                error_message=error_message,
+                error_context=error_context
+            )
+            logger.info(f"Agent {self.name}: Recorded failure for learning: {error_type}")
+        except Exception as e:
+            logger.warning(f"Agent {self.name}: Failed to record failure: {e}")
+    
+    async def get_recommended_model(self) -> Optional[str]:
+        """
+        Получить рекомендуемую модель для типа задач этого агента.
+        
+        Returns:
+            Имя рекомендуемой модели или None
+        """
+        if not self.memory:
+            return None
+        
+        try:
+            task_type = self._determine_task_type()
+            if task_type:
+                best = await self.memory.get_best_model_for_task_type(task_type)
+                if best:
+                    logger.debug(
+                        f"Agent {self.name}: Recommended model for {task_type}: "
+                        f"{best['model_name']} (success: {best['success_rate']:.0%})"
+                    )
+                    return best["model_name"]
+            return None
+        except Exception as e:
+            logger.warning(f"Agent {self.name}: Failed to get recommended model: {e}")
+            return None
 
 
 class AgentRegistry:

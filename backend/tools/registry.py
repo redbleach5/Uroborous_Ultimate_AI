@@ -2,12 +2,11 @@
 Tool Registry - Manages all available tools
 """
 
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from ..core.logger import get_logger
 logger = get_logger(__name__)
 
 from .base import BaseTool, ToolOutput
-from typing import Union
 from ..safety.guard import SafetyGuard
 from ..core.exceptions import ToolException
 

@@ -2,7 +2,7 @@
 Database tools
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from ..core.logger import get_logger
 logger = get_logger(__name__)
 

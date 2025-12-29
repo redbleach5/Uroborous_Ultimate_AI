@@ -8,6 +8,10 @@ import numpy as np
 from ..core.logger import get_logger
 logger = get_logger(__name__)
 
+SKLEARN_AVAILABLE = False
+XGB_AVAILABLE = False
+LGB_AVAILABLE = False
+
 try:
     from sklearn.model_selection import train_test_split
     from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, r2_score, mean_squared_error
@@ -15,14 +19,25 @@ try:
     from sklearn.compose import ColumnTransformer
     from sklearn.pipeline import Pipeline
     from sklearn.impute import SimpleImputer
-    import xgboost as xgb
-    import lightgbm as lgb
     from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
     from sklearn.linear_model import LogisticRegression, LinearRegression
     SKLEARN_AVAILABLE = True
-except ImportError:
-    SKLEARN_AVAILABLE = False
-    logger.warning("scikit-learn not available")
+except (ImportError, OSError, TypeError) as e:
+    logger.warning(f"scikit-learn not available: {e}")
+
+try:
+    import xgboost as xgb
+    XGB_AVAILABLE = True
+except (ImportError, OSError, TypeError) as e:
+    xgb = None
+    logger.warning(f"xgboost not available: {e}")
+
+try:
+    import lightgbm as lgb
+    LGB_AVAILABLE = True
+except (ImportError, OSError, TypeError) as e:
+    lgb = None
+    logger.warning(f"lightgbm not available: {e}")
 
 from .model_trainer import ModelTrainer
 from .hyperparameter_optimizer import HyperparameterOptimizer

@@ -5,7 +5,7 @@ Safety Guard - Validates commands and paths for security
 import re
 import time
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import Dict
 from urllib.parse import urlparse
 from collections import defaultdict
 from ..core.logger import get_logger
@@ -185,7 +185,7 @@ class SafetyGuard:
         for pattern in self.blocked_regex:
             if pattern.search(command):
                 logger.warning(f"Blocked dangerous command: {command[:100]}")
-                raise SafetyException(f"Command blocked by safety guard: dangerous pattern detected")
+                raise SafetyException("Command blocked by safety guard: dangerous pattern detected")
         
         # Check allowed commands list (if specified)
         if self.allowed_commands:

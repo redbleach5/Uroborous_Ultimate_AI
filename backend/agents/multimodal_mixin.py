@@ -7,7 +7,6 @@ from ..core.logger import get_logger
 logger = get_logger(__name__)
 
 from ..multimodal import ImageProcessor, AudioProcessor, VideoProcessor
-from ..core.exceptions import AgentException
 from ..core.pydantic_utils import pydantic_to_dict
 
 

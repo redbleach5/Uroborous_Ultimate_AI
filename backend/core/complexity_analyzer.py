@@ -6,7 +6,6 @@ Complexity Analyzer - Анализ сложности задач и генера
 """
 
 import re
-import asyncio
 from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from .logger import get_logger
@@ -205,7 +204,7 @@ class ComplexityAnalyzer:
                 data = json.loads(response.read().decode('utf-8'))
             
             # Анализируем запущенные модели для оценки ресурсов
-            models_info = data.get('models', [])
+            data.get('models', [])
             
             # Также получаем список всех доступных моделей для оценки мощности
             tags_url = f"{ollama_url}/api/tags"
@@ -442,7 +441,7 @@ class ComplexityAnalyzer:
         
         for model in models:
             model_name = model.get('name', '').lower()
-            model_size = model.get('size', 0)  # Размер в байтах
+            model.get('size', 0)  # Размер в байтах
             
             # Определяем размер модели по названию
             if any(x in model_name for x in ['70b', '72b', '65b', '67b']):

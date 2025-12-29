@@ -245,7 +245,7 @@ def with_error_handling(
             except Exception as e:
                 if log_errors:
                     logger.error(f"[{cid}] Error in {func.__name__}: {e}")
-                error_info = handler.handle_error(
+                handler.handle_error(
                     e, 
                     {"function": func.__name__, "args_count": len(args)},
                     correlation_id=cid,

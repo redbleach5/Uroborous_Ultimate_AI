@@ -12,6 +12,7 @@ from .integration import IntegrationAgent
 from .monitoring import MonitoringAgent
 from .reflection_mixin import ReflectionMixin, ReflectionResult, ReflectionQuality
 from .uncertainty_search_mixin import UncertaintySearchMixin
+from .self_consistency_mixin import SelfConsistencyMixin
 from .communicator import (
     AgentCommunicator,
     AgentMessage,
@@ -41,6 +42,8 @@ __all__ = [
     "ReflectionQuality",
     # Uncertainty Search
     "UncertaintySearchMixin",
+    # Self-Consistency
+    "SelfConsistencyMixin",
     # Communication
     "AgentCommunicator",
     "AgentMessage",
