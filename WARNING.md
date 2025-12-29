@@ -9,6 +9,8 @@
 
 - **[REFACTORING.md](./REFACTORING.md)** — План рефакторинга сложных функций (69 шт, приоритезированы)
 - **[FUTURE_PLAN.md](./FUTURE_PLAN.md)** — Roadmap развития проекта
+- **[AI-Analyze_git.md](./AI-Analyze_git.md)** — AI инструменты для анализа репозитория
+- **[docs/OWL_INTEGRATION_PLAN.md](./docs/OWL_INTEGRATION_PLAN.md)** — 🦉 План интеграции компонентов OWL (Browser, Documents)
 
 ---
 
@@ -23,6 +25,55 @@
 ---
 
 ## 🚀 НОВЫЕ ВОЗМОЖНОСТИ (29 декабря 2025)
+
+### 🦉 Browser Automation Tools (OWL Integration)
+**Файл:** `backend/tools/browser_tools.py`
+
+Автоматизация браузера на базе Playwright (вдохновлено OWL/CAMEL-AI):
+- `browser_navigate` — переход на URL и извлечение контента
+- `browser_click` — клик на элементы по селектору
+- `browser_fill` — заполнение полей форм
+- `browser_screenshot` — снимки экрана
+- `browser_execute_script` — выполнение JavaScript
+
+```bash
+# Установка (опционально)
+pip install playwright
+playwright install chromium
+```
+
+```python
+# Включить в config.yaml:
+# tools.categories.browser: true
+
+result = await tool_registry.execute_tool("browser_navigate", {
+    "url": "https://example.com",
+    "extract_text": True
+})
+# result.result = {"title": "...", "content": "...", "status": 200}
+```
+
+### 📄 Document Processing Tools (OWL Integration)
+**Файл:** `backend/tools/document_tools.py`
+
+Универсальная обработка документов:
+- `document_extract` — извлечение контента из PDF, Word, Excel, PowerPoint, JSON, XML
+- `document_info` — метаданные документа (размер, страницы, листы)
+- `zip_extract` — распаковка архивов
+
+```bash
+# Установка зависимостей (по необходимости)
+pip install pypdf python-docx pandas openpyxl python-pptx
+```
+
+```python
+result = await tool_registry.execute_tool("document_extract", {
+    "file_path": "report.pdf"
+})
+# result.result = {"content": "...", "char_count": 15000, "extension": "pdf"}
+```
+
+---
 
 ### AST-based Code Intelligence
 **Файл:** `backend/project/code_intelligence.py`

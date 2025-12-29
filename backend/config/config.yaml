@@ -205,6 +205,8 @@ tools:
     web: true
     database: true
     api: true
+    browser: false  # Requires: pip install playwright && playwright install chromium
+    document: true  # Requires: pip install pypdf python-docx pandas openpyxl python-pptx
   safety:
     enabled: true
     sandbox: false

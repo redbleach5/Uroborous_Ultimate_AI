@@ -88,6 +88,46 @@ class ToolRegistry:
             from .database_tools import DatabaseQueryTool
             self.register_tool(DatabaseQueryTool(self.safety_guard))
         
+        # Register browser tools (optional - requires playwright)
+        if get_category("browser", False):  # Disabled by default (requires extra setup)
+            try:
+                from .browser_tools import (
+                    BrowserNavigateTool, BrowserClickTool, BrowserFillTool,
+                    BrowserScreenshotTool, BrowserExecuteScriptTool
+                )
+                # Create shared browser instance
+                browser_navigate = BrowserNavigateTool(self.safety_guard, headless=True)
+                self.register_tool(browser_navigate)
+                
+                # Create dependent tools with shared browser
+                click_tool = BrowserClickTool(self.safety_guard, browser_navigate)
+                fill_tool = BrowserFillTool(self.safety_guard, browser_navigate)
+                screenshot_tool = BrowserScreenshotTool(self.safety_guard, browser_navigate)
+                script_tool = BrowserExecuteScriptTool(self.safety_guard, browser_navigate)
+                
+                self.register_tool(click_tool)
+                self.register_tool(fill_tool)
+                self.register_tool(screenshot_tool)
+                self.register_tool(script_tool)
+                
+                logger.info("Browser tools registered (playwright)")
+            except ImportError as e:
+                logger.warning(f"Browser tools not available: {e}")
+        
+        # Register document tools (optional - requires various parsers)
+        if get_category("document", True):
+            try:
+                from .document_tools import (
+                    DocumentExtractTool, ZipExtractTool, DocumentInfoTool
+                )
+                self.register_tool(DocumentExtractTool(self.safety_guard))
+                self.register_tool(ZipExtractTool(self.safety_guard))
+                self.register_tool(DocumentInfoTool(self.safety_guard))
+                
+                logger.info("Document tools registered")
+            except ImportError as e:
+                logger.warning(f"Document tools not available: {e}")
+        
         logger.info(f"Registered {len(self.tools)} tools")
         self._initialized = True
     
